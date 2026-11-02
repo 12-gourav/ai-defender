@@ -13,7 +13,6 @@
 
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -22,6 +21,8 @@ use agentguard_hooks::coverage::{rows, NOT_COMPLETE};
 use agentguard_hooks::install::{self, config_path, file_sha256, inspect};
 use agentguard_hooks::provider::{ADAPTER_VERSION, DOCS_VERIFIED};
 use agentguard_hooks::{HookEnv, HookResponse, Provider};
+use agentguard_platform::access;
+use agentguard_platform::fs::{OpenNoFollow, UnixMode};
 use agentguard_trust::keyfile::SigningRole;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -96,7 +97,7 @@ fn save_record(env: &Environment, p: Provider, v: &Value) -> Result<(), EngineEr
         )
     };
     let dir = records_dir(env);
-    match DirBuilder::new().mode(0o700).create(&dir) {
+    match DirBuilder::new().unix_mode(0o700).create(&dir) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
         Err(_) => return Err(io()),
@@ -110,9 +111,8 @@ fn save_record(env: &Environment, p: Provider, v: &Value) -> Result<(), EngineEr
     let mut f = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(0o600)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(&tmp)
+        .unix_mode(0o600)
+        .open_no_follow(&tmp)
         .map_err(|_| io())?;
     let bytes = serde_json::to_vec_pretty(v).map_err(|_| io())?;
     f.write_all(&bytes)
@@ -136,24 +136,26 @@ fn engine_problems(path: &Path) -> Vec<&'static str> {
     }
     match fs::metadata(path) {
         Ok(m) => {
-            if !m.is_file() || m.mode() & 0o111 == 0 {
+            if !agentguard_platform::fs::is_executable(path, &m) {
                 problems.push("the engine is not an executable file");
             }
-            if m.mode() & 0o022 != 0 {
-                problems.push("the engine is writable by group or others");
-            }
-            let me = nix::unistd::getuid().as_raw();
-            if m.uid() != me && m.uid() != 0 {
-                problems.push("the engine is owned by another user");
+            match access::of(path, &m) {
+                Ok(a) => {
+                    if a.others_can_write {
+                        problems.push("the engine is writable by group or others");
+                    }
+                    if a.owner == access::Owner::Other {
+                        problems.push("the engine is owned by another user");
+                    }
+                }
+                Err(_) => problems.push("the engine's owner and permissions cannot be read"),
             }
         }
         Err(_) => problems.push("the engine binary does not exist"),
     }
-    if path
-        .parent()
-        .and_then(|d| fs::metadata(d).ok())
-        .is_some_and(|m| m.mode() & 0o022 != 0)
-    {
+    if path.parent().is_some_and(|d| {
+        fs::metadata(d).is_ok_and(|m| access::of(d, &m).is_ok_and(|a| a.others_can_write))
+    }) {
         problems.push("the engine's directory is writable by group or others");
     }
     problems
@@ -194,7 +196,7 @@ pub fn stable_engine(env: &Environment, expected: Option<&str>) -> Result<PathBu
         return Ok(dest);
     }
     for d in [&base, &dir] {
-        match DirBuilder::new().mode(0o700).create(d) {
+        match DirBuilder::new().unix_mode(0o700).create(d) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(_) => return Err(io("created")),
@@ -210,9 +212,8 @@ pub fn stable_engine(env: &Environment, expected: Option<&str>) -> Result<PathBu
     let mut f = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(0o755)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(&tmp)
+        .unix_mode(0o755)
+        .open_no_follow(&tmp)
         .map_err(|_| io("written"))?;
     f.write_all(&bytes)
         .and_then(|()| f.sync_all())
@@ -834,11 +835,8 @@ pub fn verify(env: &Environment, arguments: Value) -> Result<Value, EngineError>
         provider: a.provider.clone(),
     })?;
     let trust = verified(&env.store).map(|_| ());
-    let home = env
-        .process_env
-        .iter()
-        .find(|(k, _)| k == "HOME")
-        .map_or_else(|| "/".to_owned(), |(_, v)| v.clone());
+    let home = agentguard_exec::environment::home(&env.process_env)
+        .map_or_else(|| "/".to_owned(), str::to_owned);
     let cwd = a.working_directory.clone().unwrap_or(home);
     let mut results = Vec::new();
     for p in providers {

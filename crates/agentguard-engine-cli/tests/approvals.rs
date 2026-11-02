@@ -43,7 +43,7 @@ fn env_for(root: &Path, agent: Option<AgentKind>, clock: &Arc<ManualClock>) -> E
 
 fn world() -> World {
     let base = tempfile::tempdir().unwrap();
-    let canonical = fs::canonicalize(base.path()).unwrap();
+    let canonical = agentguard_platform::fs::canonicalize(base.path()).unwrap();
     let project = canonical.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
     fs::write(project.join("Cargo.toml"), "[package]\n").unwrap();
@@ -474,7 +474,7 @@ fn concurrent_engine_processes_consume_a_grant_at_most_once() {
     let w = world();
     let (id, token, digest) = w.requested(push("race"));
     assert!(ok(&w.approve(&id, &digest)));
-    let home = fs::canonicalize(w.base.path()).unwrap();
+    let home = agentguard_platform::fs::canonicalize(w.base.path()).unwrap();
     let request = json!({
         "protocol_version": 1, "request_id": "race", "command": "authorization.consume",
         "arguments": { "request": w.operation(push("race"), "claude"), "approval_id": id, "claim_token": token },

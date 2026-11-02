@@ -21,9 +21,9 @@ use std::time::Instant;
 
 use agentguard_secrets::detectors::BUILTIN;
 use agentguard_secrets::git_index::staged;
-use agentguard_secrets::{
-    finding_id, redact, scan, scan_files, ScanError, ScanOptions, SkipReason,
-};
+#[cfg(unix)]
+use agentguard_secrets::ScanError;
+use agentguard_secrets::{finding_id, redact, scan, scan_files, ScanOptions, SkipReason};
 
 const GITHUB: &str = "ghp_FAKEfakeFAKEfakeFAKEfakeFAKEfake0000";
 const STRIPE: &str = "sk_live_FAKEfakeFAKEfake0000";

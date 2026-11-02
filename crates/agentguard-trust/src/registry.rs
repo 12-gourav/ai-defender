@@ -61,10 +61,11 @@ impl DirectoryIdentity {
                 rule: "must be a directory, not a symlink",
             });
         }
-        let canonical = fs::canonicalize(root.as_path()).map_err(|_| TrustError::Io {
-            object,
-            action: "resolved",
-        })?;
+        let canonical =
+            agentguard_platform::fs::canonicalize(root.as_path()).map_err(|_| TrustError::Io {
+                object,
+                action: "resolved",
+            })?;
         if canonical.as_path() != root.as_path() {
             return Err(TrustError::Insecure {
                 object,
@@ -180,15 +181,19 @@ pub fn canonical_project_root(
     trust_root: &Path,
 ) -> Result<NormalizedPath, TrustError> {
     let reject = |rule| TrustError::ProjectRejected { rule };
-    let canonical = fs::canonicalize(path).map_err(|_| reject("directory does not exist"))?;
+    let canonical = agentguard_platform::fs::canonicalize(path)
+        .map_err(|_| reject("directory does not exist"))?;
     if !canonical.is_dir() {
         return Err(reject("not a directory"));
     }
     if canonical.parent().is_none() {
         return Err(reject("the filesystem root cannot be a project"));
     }
-    let trust = fs::canonicalize(trust_root).unwrap_or_else(|_| trust_root.to_path_buf());
-    if canonical.starts_with(&trust) || trust.starts_with(&canonical) {
+    let trust = agentguard_platform::fs::canonicalize(trust_root)
+        .unwrap_or_else(|_| trust_root.to_path_buf());
+    if agentguard_platform::fs::path_starts_with(&canonical, &trust)
+        || agentguard_platform::fs::path_starts_with(&trust, &canonical)
+    {
         return Err(reject(
             "a project must not contain, or lie inside, the trust store",
         ));

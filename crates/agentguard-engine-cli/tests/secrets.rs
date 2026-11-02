@@ -41,7 +41,7 @@ fn write(root: &Path, rel: &str, content: &str) {
 
 fn world() -> World {
     let base = tempfile::tempdir().unwrap();
-    let canonical = fs::canonicalize(base.path()).unwrap();
+    let canonical = agentguard_platform::fs::canonicalize(base.path()).unwrap();
     let project = canonical.join("project");
     write(&project, "Cargo.toml", "[package]\n");
     write(&project, "src/main.rs", "fn main() {}\n");

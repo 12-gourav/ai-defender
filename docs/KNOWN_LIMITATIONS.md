@@ -168,7 +168,7 @@ See [HOOKS.md](HOOKS.md). Hooks are not complete AI-agent protection.
 | L108 | Installation rewrites the JSON file: content and unrelated entries are preserved exactly, but formatting and key order may change | No format-preserving JSON editor in the dependency tree | Backup kept; uninstall restores the same JSON value | accepted |
 | L109 | The health check runs synthetic hook calls inside the engine; it cannot prove that the provider actually invokes the hooks | Providers cannot be driven from AI Defender | Audit shows `hook-invoked` events once the provider runs them | accepted |
 | L110 | Each protected tool call adds about 16 ms (release build, Linux); calls needing Git inspection or approvals take about 120 ms or more | One process per call, signed-state verification, audit fsyncs | No daemon by design | accepted |
-| L111 | Windows is unsupported | Platform scope | Linux x64/arm64 and macOS x64/arm64 run the full Rust suite in CI; the release workflow runs the global-install test with each released engine | open: Windows port |
+| L111 | Windows is not released | The engine builds for Windows, but has not yet passed its suite on a Windows runner (L117 to L124) | Linux x64/arm64 and macOS x64/arm64 run the full Rust suite in CI; the release workflow runs the global-install test with each released engine | open: Windows port in progress |
 
 ## Production hardening (0.2.0, 2026-11-02)
 
@@ -179,3 +179,20 @@ See [HOOKS.md](HOOKS.md). Hooks are not complete AI-agent protection.
 | L114 | `npm uninstall -g ai-defender` removes the command without the password, and the owner of the account can edit the agents' settings files or delete `~/.config/agentguard` | npm offers no reliable hook into uninstallation, and a tool must not stop its owner from removing it | `ai-defender uninstall` is the supported, password-protected path; the hooks stay installed and keep blocking after a bare npm uninstall; agents are refused by the guard and by the engine | accepted |
 | L115 | The passphrase attempt record is an unsigned file; anyone who can delete it resets the backoff, and concurrent engine processes may each count one failure | It slows guessing through AI Defender; it is not what protects the key | The key files are Argon2id-sealed; the record lives in the private `keys` directory | accepted |
 | L116 | Project identity detects a directory recreated at the same path through the inode generation only where the filesystem reports one (ext4, XFS, Btrfs); elsewhere on Linux it relies on device and inode | `FS_IOC_GETVERSION` is filesystem-specific | APFS never reuses inode numbers; NTFS file indexes carry a sequence number | accepted |
+
+## Windows port (in progress, 2026-11-02)
+
+The engine compiles and passes clippy for `x86_64-pc-windows-gnu`, and CI runs the suite on
+`windows-latest`. It is not released until that suite is green and the items marked *release
+blocker* are closed.
+
+| # | Limitation | Why | Mitigation | Status |
+|---|---|---|---|---|
+| L117 | The trust-store, approval, managed-execution and `tests/integration` suites, and the unit tests written with Unix path literals, run on Unix only | They assert Unix modes, symlinks and `sh` behaviour, or build paths such as `/work/app` | On Windows: the path-rule tests (`agentguard-core`), the platform layer, the Job Object runner, and the hooks end-to-end suite with a bypass test of Windows spellings | open: release blocker |
+| L118 | The global-install test (`npm run e2e:install`) and the release workflow do not cover Windows, and `package.json` does not list `win32` | npm's Windows prefix layout and `.cmd` shims differ; npm refuses `ai-defender` on Windows until `os` lists it | `pack:check --release` refuses an `os`/`cpu` that does not match the bundled engines, so `win32` cannot be declared without a Windows engine | open: release blocker |
+| L119 | Codex hooks are not installed on Windows | Codex runs a hook as one shell command line, and which shell runs it on Windows is not documented | `integrations install codex` refuses on Windows; Claude Code hooks use an argument vector, no shell | open |
+| L120 | Managed execution on Windows runs only `.exe` and `.com` files, so `npm`, `npx`, `yarn` and other `.cmd` shims cannot be run through it | `cmd.exe` re-parses a batch file's arguments differently from the vector AI Defender evaluated | Run the tool's `.exe` or `node` with its script | accepted |
+| L121 | On Windows a timed-out or leftover process is terminated without a graceful stop, and the engine does not suppress Windows Error Reporting crash dumps | Windows has no `SIGTERM` for console-less processes; dump suppression needs a machine policy | The Job Object kills the whole tree and dies with the engine | accepted |
+| L122 | Containment ignores case with Unicode upper-casing, not the volume's NTFS upcase table, and directories with per-directory case sensitivity enabled are compared as case-insensitive | The upcase table is not exposed cheaply | Restrictive rules already match without case; existing components are canonicalised to their on-disk spelling | accepted |
+| L123 | In terminal commands, Git Bash spellings (`/c/Users/...`) are recognised by the trusted-state guard but not resolved as path arguments | Path arguments are resolved with Windows path rules | The guard matches `C:\`, `c:/`, `/c/`, `~`, `%USERPROFILE%` and `$env:USERPROFILE` spellings of protected paths | open |
+| L124 | PowerShell commands are classified with the POSIX shell grammar | There is no PowerShell parser | Commands the grammar cannot analyse are low confidence and assessed as at least medium risk; protected paths are still found by the guard's text match | open |

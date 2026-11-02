@@ -1,5 +1,7 @@
 //! The engine protocol and project workflows, in-process against isolated temporary state.
 
+// Unix file modes, symlinks and shells throughout; not yet ported to Windows.
+#![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -28,7 +30,7 @@ struct World {
 
 fn world() -> World {
     let base = tempfile::tempdir().unwrap();
-    let canonical = fs::canonicalize(base.path()).unwrap();
+    let canonical = agentguard_platform::fs::canonicalize(base.path()).unwrap();
     let project = canonical.join("project");
     fs::create_dir_all(project.join(".git")).unwrap();
     fs::create_dir_all(project.join("src")).unwrap();

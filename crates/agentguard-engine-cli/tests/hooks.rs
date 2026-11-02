@@ -40,17 +40,24 @@ struct World {
 }
 
 fn git(dir: &Path, home: &Path, args: &[&str]) -> bool {
-    Command::new("git")
-        .args(args)
+    let mut cmd = Command::new("git");
+    cmd.args(args)
         .current_dir(dir)
         .env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env("HOME", home)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+        .stderr(Stdio::null());
+    // Windows programs misbehave without it; absent elsewhere.
+    if let Some(root) = std::env::var_os("SystemRoot") {
+        cmd.env("SystemRoot", root);
+    }
+    cmd.status().is_ok_and(|s| s.success())
+}
+
+fn engine_file_name() -> String {
+    format!("agentguard-engine{}", std::env::consts::EXE_SUFFIX)
 }
 
 fn engine_binary() -> PathBuf {
@@ -60,13 +67,12 @@ fn engine_binary() -> PathBuf {
 /// A copy of the engine with owner-only write permissions, as an installed engine has (the
 /// build directory may be group-writable, which installation rightly refuses).
 fn installed_engine(base: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let dir = base.join("engine-bin");
     fs::create_dir_all(&dir).unwrap();
-    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
-    let path = dir.join("agentguard-engine");
+    agentguard_platform::fs::set_unix_mode(&dir, 0o755).unwrap();
+    let path = dir.join(engine_file_name());
     fs::copy(engine_binary(), &path).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    agentguard_platform::fs::set_unix_mode(&path, 0o755).unwrap();
     path
 }
 
@@ -76,7 +82,8 @@ fn env_for(trust_root: &Path, home: &Path, agent: Option<AgentKind>) -> Environm
         .unwrap()
         .parent()
         .unwrap()
-        .join("engine-bin/agentguard-engine");
+        .join("engine-bin")
+        .join(engine_file_name());
     let mut env = Environment::isolated(trust_root.to_path_buf(), KdfCost::MINIMUM);
     env.process_env = vec![
         ("PATH".to_owned(), std::env::var("PATH").unwrap_or_default()),
@@ -99,7 +106,7 @@ fn world() -> Option<World> {
         return None;
     }
     let base = tempfile::tempdir().unwrap();
-    let canonical = fs::canonicalize(base.path()).unwrap();
+    let canonical = agentguard_platform::fs::canonicalize(base.path()).unwrap();
     let project = canonical.join("project");
     let home = canonical.join("home");
     let outside = canonical.join("outside");
@@ -454,6 +461,71 @@ fn sensitive_files_and_secret_disclosure_follow_phase_6() {
         "{:?}",
         push.verdict
     );
+}
+
+/// Windows spellings of a protected file (case, `/`, a lower-case drive, a trailing dot or
+/// space, an alternate data stream, a device name) are refused or treated as that file, and the
+/// trusted state is guarded in every spelling a command can use.
+#[cfg(windows)]
+#[test]
+fn windows_spellings_never_reach_a_protected_file() {
+    let Some(w) = world() else { return };
+    let dir = w.dir().to_owned();
+    let lower_drive = format!("{}{}", dir[..1].to_lowercase(), &dir[1..]);
+    let slashes = dir.replace('\\', "/");
+    for path in [
+        format!(r"{dir}\.ENV"),
+        format!("{slashes}/.env"),
+        format!(r"{lower_drive}\.env"),
+        format!(r"{dir}\.env."),
+        format!(r"{dir}\.env "),
+        format!(r"{dir}\.env:stream"),
+        format!(r"{dir}\.env::$DATA"),
+        format!(r"{dir}\NUL"),
+        format!(r"{dir}\src\CON.txt"),
+        ".env.".to_owned(),
+        ".env::$DATA".to_owned(),
+    ] {
+        let r = w.claude("Read", json!({ "file_path": path }));
+        assert!(denies(&r), "{path}: {:?}", r.verdict);
+    }
+    let trust = w
+        .trust_root
+        .join(r"trusted\global\1.json")
+        .to_string_lossy()
+        .into_owned();
+    let settings = w
+        .home
+        .join(r".claude\settings.json")
+        .to_string_lossy()
+        .into_owned();
+    for path in [
+        trust.to_uppercase(),
+        trust.replace('\\', "/"),
+        settings.to_lowercase(),
+    ] {
+        let r = w.claude("Write", json!({ "file_path": path, "content": "{}" }));
+        assert!(
+            matches!(verdict(&r), Verdict::Deny { rule, .. } if rule.starts_with("guard.")),
+            "{path}: {:?}",
+            r.verdict
+        );
+    }
+    let git_bash = format!(
+        "/{}{}",
+        trust[..1].to_lowercase(),
+        trust[2..].replace('\\', "/")
+    );
+    for command in [
+        format!("del {}", trust.to_lowercase()),
+        format!("rm {git_bash}"),
+        r"Remove-Item $env:USERPROFILE\.claude\settings.json".to_owned(),
+        r"type %USERPROFILE%\.claude\settings.json > x".to_owned(),
+        r"C:\x\AGENTGUARD-ENGINE.EXE".to_owned(),
+    ] {
+        let r = w.claude("PowerShell", json!({ "command": command }));
+        assert!(denies(&r), "{command}: {:?}", r.verdict);
+    }
 }
 
 /// Invariants 9, 10, 11: push needs approval; the grant is bound to the exact call and state;

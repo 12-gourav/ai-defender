@@ -14,7 +14,7 @@ test("platform detection maps OS/CPU to engine packages", () => {
   assert.equal(detectPlatform("linux", "x64")?.bundleDir, "binaries/linux-x64");
   assert.equal(detectPlatform("darwin", "arm64")?.rustTarget, "aarch64-apple-darwin");
   assert.equal(detectPlatform("win32", "x64")?.binaryName, "agentguard-engine.exe");
-  assert.equal(detectPlatform("win32", "x64")?.status, "unsupported");
+  assert.equal(detectPlatform("win32", "x64")?.status, "untested");
   assert.equal(detectPlatform("linux", "x64")?.status, "validated");
   for (const [os, arch] of [["freebsd", "x64"], ["win32", "arm64"], ["linux", "ia32"], ["linux", "__proto__"], ["constructor", ""]]) {
     assert.equal(detectPlatform(os!, arch!), undefined, `${os}-${arch}`);

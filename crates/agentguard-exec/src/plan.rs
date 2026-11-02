@@ -129,11 +129,7 @@ fn plan_git(
 ) -> Result<GitPlan, Refusal> {
     let command =
         git::parse(argv).map_err(|e| refuse("execution.unsupported-git", e.to_string()))?;
-    let home = env
-        .vars
-        .iter()
-        .find(|(k, _)| k == "HOME")
-        .map(|(_, v)| v.as_str());
+    let home = crate::environment::home(&env.vars);
     let plumbing = Plumbing::new(&program.path, cwd, &env.path, home);
     let context = GitContext::inspect(&plumbing, project_root, false);
     if command.kind != GitKind::ReadOnly {

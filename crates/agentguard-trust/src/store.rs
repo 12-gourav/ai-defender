@@ -169,7 +169,8 @@ impl TrustStore {
     /// The trust root as a normalised path, for the engine's trusted-state guard.
     #[must_use]
     pub fn protected_root(&self) -> Option<NormalizedPath> {
-        let path = fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
+        let path =
+            agentguard_platform::fs::canonicalize(&self.root).unwrap_or_else(|_| self.root.clone());
         NormalizedPath::new(path.to_string_lossy().into_owned()).ok()
     }
 

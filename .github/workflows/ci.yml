@@ -33,6 +33,9 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      # Windows code is cfg-gated; lint it here too so a Unix-only change cannot break it.
+      - run: rustup target add x86_64-pc-windows-gnu
+      - run: cargo clippy --workspace --all-targets --all-features --locked --target x86_64-pc-windows-gnu -- -D warnings
 
   test:
     name: tests (${{ matrix.name }})
@@ -45,6 +48,7 @@ jobs:
           - { name: linux-arm64, os: ubuntu-24.04-arm }
           - { name: darwin-arm64, os: macos-14 }
           - { name: darwin-x64, os: macos-15-intel }
+          - { name: win32-x64, os: windows-latest }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

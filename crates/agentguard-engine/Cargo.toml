@@ -12,6 +12,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+agentguard-platform = { workspace = true }
 agentguard-core = { workspace = true }
 agentguard-proto = { workspace = true }
 agentguard-audit = { workspace = true }

@@ -462,10 +462,7 @@ impl Plumbing {
         let mut env = vec![
             (
                 "PATH".to_owned(),
-                path.iter()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .collect::<Vec<_>>()
-                    .join(":"),
+                crate::environment::search_path_value(path),
             ),
             ("LANG".to_owned(), "C".to_owned()),
             ("LC_ALL".to_owned(), "C".to_owned()),
@@ -687,9 +684,10 @@ impl GitContext {
         let common = p
             .output(&["rev-parse", "--git-common-dir"])
             .unwrap_or_else(|| git_dir.clone());
-        let root = std::fs::canonicalize(&top).ok()?;
-        let git_dir = std::fs::canonicalize(&git_dir).ok()?;
-        let inside_project = root.starts_with(project_root) && git_dir.starts_with(project_root);
+        let root = agentguard_platform::fs::canonicalize(&top).ok()?;
+        let git_dir = agentguard_platform::fs::canonicalize(&git_dir).ok()?;
+        let inside_project = agentguard_platform::fs::path_starts_with(&root, project_root)
+            && agentguard_platform::fs::path_starts_with(&git_dir, project_root);
         let head = p.commit("HEAD");
         let roots = head
             .as_ref()
@@ -698,7 +696,7 @@ impl GitContext {
         let repository_id = short_hash(&format!(
             "{}\0{}\0{}",
             root.display(),
-            std::fs::canonicalize(root.join(&common))
+            agentguard_platform::fs::canonicalize(root.join(&common))
                 .unwrap_or_else(|_| git_dir.clone())
                 .display(),
             roots
@@ -779,11 +777,15 @@ impl GitContext {
             .flatten()
             .flatten()
             .filter(|e| {
-                use std::os::unix::fs::PermissionsExt;
+                // Git for Windows runs a hook file through its shell whatever its mode.
                 let name = e.file_name().to_string_lossy().into_owned();
                 !name.ends_with(".sample")
-                    && e.metadata()
-                        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+                    && e.metadata().is_ok_and(|m| {
+                        m.is_file()
+                            && (cfg!(windows)
+                                || agentguard_platform::fs::unix_mode(&m)
+                                    .is_some_and(|mode| mode & 0o111 != 0))
+                    })
             })
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .take(32)

@@ -5,7 +5,6 @@
 //! are pure functions over strings so they are unit-testable without a particular host.
 
 use std::fs;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use agentguard_common::paths::{check_private_dir, AppPaths};
@@ -106,13 +105,16 @@ pub fn userns_available(clone_sysctl: Option<&str>, max_user_ns: Option<&str>) -
 #[must_use]
 pub fn find_on_path(name: &str, path_var: Option<&str>) -> Option<PathBuf> {
     let path_var = path_var?;
-    path_var
-        .split(':')
-        .filter(|d| !d.is_empty())
-        .map(|d| Path::new(d).join(name))
+    std::env::split_paths(path_var)
+        .filter(|d| !d.as_os_str().is_empty())
+        .flat_map(|d| {
+            agentguard_platform::fs::program_file_names(name)
+                .into_iter()
+                .map(move |n| d.join(n))
+        })
         .find(|candidate| {
             fs::metadata(candidate)
-                .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+                .is_ok_and(|m| agentguard_platform::fs::is_executable(candidate, &m))
         })
 }
 
@@ -131,9 +133,8 @@ fn os_pretty_name() -> String {
         .unwrap_or_else(|| "unknown".to_owned())
 }
 
-fn current_uid() -> u32 {
-    // Owner of the process's own /proc entry is its effective uid.
-    fs::metadata("/proc/self").map_or(0, |m| m.uid())
+fn current_uid() -> String {
+    agentguard_platform::access::current_user_id()
 }
 
 fn os_checks(out: &mut Vec<Check>) {
@@ -421,8 +422,10 @@ mod tests {
         assert_eq!(userns_available(None, None), Status::Unknown);
     }
 
+    #[cfg(unix)]
     #[test]
     fn find_on_path_requires_executable_file() {
+        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let exe = dir.path().join("tool");
         fs::write(&exe, b"#!/bin/sh\n").unwrap();

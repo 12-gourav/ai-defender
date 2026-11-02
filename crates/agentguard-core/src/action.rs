@@ -1065,7 +1065,8 @@ impl Action {
     }
 }
 
-#[cfg(test)]
+// Unix paths throughout; the Windows path rules are tested in agentguard-core.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

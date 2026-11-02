@@ -2,6 +2,8 @@
 //! works against a real trust store on disk; decision-level tests drive the engine's
 //! `Authorizer` built from `load_runtime`. See docs/SECURITY_INVARIANTS.md (Phase 2 table).
 
+// Unix file modes, symlinks and shells throughout; not yet ported to Windows.
+#![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -59,7 +61,13 @@ fn now() -> OffsetDateTime {
 }
 
 fn np(p: &Path) -> NormalizedPath {
-    NormalizedPath::new(fs::canonicalize(p).unwrap().to_str().unwrap()).unwrap()
+    NormalizedPath::new(
+        agentguard_platform::fs::canonicalize(p)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
 }
 
 fn rule(id: &str, decision: Decision, matcher: ActionMatcher) -> Rule {

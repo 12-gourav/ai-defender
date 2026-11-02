@@ -16,6 +16,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+agentguard-platform = { workspace = true }
 agentguard-core = { workspace = true }
 agentguard-common = { workspace = true }
 agentguard-audit = { workspace = true }

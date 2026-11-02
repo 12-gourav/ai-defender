@@ -177,21 +177,23 @@ impl TrustedStateGuard {
                 if invokes_privileged_agentguard(command) {
                     return Some(GuardViolation::SelfApproval);
                 }
-                let root = ctx.project().root().as_str();
+                let command = comparable(command);
+                let root = comparable(ctx.project().root().as_str());
+                let home = self.home.as_ref().map(|h| comparable(h.as_str()));
                 let mentions = |guarded: &NormalizedPath| {
-                    let full = guarded.as_str();
+                    let full = comparable(guarded.as_str());
                     let relative = full
-                        .strip_prefix(root)
+                        .strip_prefix(root.as_str())
                         .map(|r| r.trim_start_matches('/'))
                         .filter(|r| !r.is_empty());
-                    let under_home = self
-                        .home
-                        .as_ref()
-                        .and_then(|h| full.strip_prefix(h.as_str()).filter(|r| r.starts_with('/')));
-                    command.contains(full)
+                    let under_home = home
+                        .as_deref()
+                        .and_then(|h| full.strip_prefix(h).filter(|r| r.starts_with('/')));
+                    command.contains(&full)
+                        || git_bash_form(&full).is_some_and(|f| command.contains(&f))
                         || relative.is_some_and(|r| command.contains(r))
                         || under_home.is_some_and(|r| {
-                            ["~", "$HOME", "${HOME}"]
+                            HOME_PREFIXES
                                 .iter()
                                 .any(|prefix| command.contains(&format!("{prefix}{r}")))
                         })
@@ -206,23 +208,80 @@ impl TrustedStateGuard {
     }
 }
 
+/// How a command can spell the home directory. On Windows, compared in lower case.
+const HOME_PREFIXES: &[&str] = if cfg!(windows) {
+    &[
+        "~",
+        "$home",
+        "${home}",
+        "%userprofile%",
+        "$env:userprofile",
+        "${env:userprofile}",
+    ]
+} else {
+    &["~", "$HOME", "${HOME}"]
+};
+
+/// Text in the form paths are compared in: itself, or on Windows lower case with `/`
+/// separators, since `C:\Dir`, `c:/dir` and `C:/DIR` all name the same directory.
+fn comparable(text: &str) -> String {
+    if cfg!(windows) {
+        text.to_lowercase().replace('\\', "/")
+    } else {
+        text.to_owned()
+    }
+}
+
+/// Git Bash's spelling of a Windows path: `c:/dir` is `/c/dir`.
+fn git_bash_form(comparable_path: &str) -> Option<String> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let mut chars = comparable_path.chars();
+    match (chars.next(), chars.next()) {
+        (Some(drive), Some(':')) if drive.is_ascii_alphabetic() => {
+            Some(format!("/{drive}{}", chars.as_str()))
+        }
+        _ => None,
+    }
+}
+
+/// The program a command word names: its last path component; on Windows in lower case and
+/// without an executable or script extension (`C:\x\AGENTGUARD-ENGINE.EXE`).
+fn program_name(word: &str) -> String {
+    let last = word
+        .rsplit(|c| c == '/' || (cfg!(windows) && c == '\\'))
+        .next()
+        .unwrap_or(word);
+    if !cfg!(windows) {
+        return last.to_owned();
+    }
+    let lower = last.to_ascii_lowercase();
+    [".exe", ".com", ".cmd", ".bat", ".ps1"]
+        .iter()
+        .find_map(|ext| lower.strip_suffix(ext))
+        .unwrap_or(&lower)
+        .to_owned()
+}
+
 fn invokes_privileged_agentguard(command: &str) -> bool {
     let words: Vec<&str> = command
         .split(|c: char| c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')' | '`'))
         .filter(|w| !w.is_empty())
         .collect();
-    let program = |w: &str| w.rsplit('/').next().unwrap_or(w).to_owned();
     // The engine binary speaks the management protocol directly; an agent never needs it.
-    words.iter().any(|w| program(w) == "agentguard-engine")
+    words.iter().any(|w| program_name(w) == "agentguard-engine")
         || words.windows(2).any(|pair| match pair {
             [p, sub] => {
-                CLI_PROGRAMS.contains(&program(p).as_str()) && PRIVILEGED_SUBCOMMANDS.contains(sub)
+                CLI_PROGRAMS.contains(&program_name(p).as_str())
+                    && PRIVILEGED_SUBCOMMANDS.contains(sub)
             }
             _ => false,
         })
 }
 
-#[cfg(test)]
+// Unix paths throughout; the Windows path rules are tested in agentguard-core.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use agentguard_core::action::{FilesystemAction, TerminalAction};

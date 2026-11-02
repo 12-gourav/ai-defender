@@ -21,8 +21,9 @@
 
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
+
+use agentguard_platform::fs::{OpenNoFollow, UnixMode};
 use std::sync::Arc;
 
 use agentguard_audit::{AuditSink, HookEventKind, HookRecord, SecurityEvent};
@@ -107,18 +108,15 @@ pub fn agent_config_paths(home: Option<&str>) -> Vec<PathBuf> {
     ]
 }
 
-fn var<'a>(env: &'a [(String, String)], name: &str) -> Option<&'a str> {
-    env.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
-}
-
 fn guard_for(env: &HookEnv<'_>, runtime: &TrustedRuntime) -> TrustedStateGuard {
     let mut roots = runtime.protected_roots.clone();
-    let extra = agent_config_paths(var(env.caller_env, "HOME"))
+    let home = agentguard_exec::environment::home(env.caller_env);
+    let extra = agent_config_paths(home)
         .into_iter()
         .chain(env.engine_path.map(Path::to_path_buf));
     roots.extend(extra.filter_map(|p| NormalizedPath::new(p.to_string_lossy().as_ref()).ok()));
     let guard = TrustedStateGuard::new(roots);
-    match var(env.caller_env, "HOME").and_then(|h| NormalizedPath::new(h).ok()) {
+    match home.and_then(|h| NormalizedPath::new(h).ok()) {
         Some(home) => guard.with_home(home),
         None => guard,
     }
@@ -369,7 +367,7 @@ fn save_claim(store: &TrustStore, id: ApprovalId, token: &str) -> Result<(), Hoo
         )
     };
     for d in [store.root().join("hooks"), dir.clone()] {
-        match DirBuilder::new().mode(0o700).create(&d) {
+        match DirBuilder::new().unix_mode(0o700).create(&d) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(_) => return Err(fail()),
@@ -385,9 +383,8 @@ fn save_claim(store: &TrustStore, id: ApprovalId, token: &str) -> Result<(), Hoo
     let mut f = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(0o600)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(&tmp)
+        .unix_mode(0o600)
+        .open_no_follow(&tmp)
         .map_err(|_| fail())?;
     f.write_all(token.as_bytes())
         .and_then(|()| f.sync_all())
@@ -399,8 +396,7 @@ fn load_claim(store: &TrustStore, id: ApprovalId) -> Option<ClaimToken> {
     let mut text = String::new();
     OpenOptions::new()
         .read(true)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(claims_dir(store).join(id.to_string()))
+        .open_no_follow(claims_dir(store).join(id.to_string()))
         .ok()?
         .take(256)
         .read_to_string(&mut text)

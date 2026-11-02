@@ -18,8 +18,9 @@
 
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+
+use agentguard_platform::fs::{OpenNoFollow, UnixMode};
 
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -51,12 +52,7 @@ pub fn config_path(
     provider: Provider,
     caller_env: &[(String, String)],
 ) -> Result<PathBuf, InstallError> {
-    let var = |n: &str| {
-        caller_env
-            .iter()
-            .find(|(k, _)| k == n)
-            .map(|(_, v)| v.as_str())
-    };
+    let var = |n: &str| agentguard_exec::environment::lookup(caller_env, n);
     let relocated = match provider {
         Provider::Claude => "CLAUDE_CONFIG_DIR",
         Provider::Codex => "CODEX_HOME",
@@ -66,9 +62,16 @@ pub fn config_path(
             "{relocated} is set; AI Defender installs only into the default configuration directory, so it would not be read. Unset it or configure the hooks manually."
         )));
     }
-    let home = var("HOME")
+    if cfg!(windows) && provider == Provider::Codex {
+        // Codex runs a hook as one shell command line, and which shell that is on Windows is
+        // not documented; a handler that fails to parse would let tool calls through.
+        return Err(err(
+            "Codex hooks are not supported on Windows yet; configure Claude Code, or protect Codex through managed execution",
+        ));
+    }
+    let home = agentguard_exec::environment::home(caller_env)
         .filter(|h| Path::new(h).is_absolute())
-        .ok_or_else(|| err("HOME is not set to an absolute path"))?;
+        .ok_or_else(|| err("HOME (USERPROFILE on Windows) is not set to an absolute path"))?;
     Ok(match provider {
         Provider::Claude => Path::new(home).join(".claude/settings.json"),
         Provider::Codex => Path::new(home).join(".codex/hooks.json"),
@@ -166,8 +169,7 @@ pub fn read_config(path: &Path) -> Result<Loaded, InstallError> {
     let mut bytes = Vec::new();
     OpenOptions::new()
         .read(true)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(path)
+        .open_no_follow(path)
         .and_then(|f| f.take(MAX_CONFIG_BYTES + 1).read_to_end(&mut bytes))
         .map_err(|_| err(format!("{} cannot be read", path.display())))?;
     let map = if bytes.iter().all(u8::is_ascii_whitespace) {
@@ -183,14 +185,22 @@ pub fn read_config(path: &Path) -> Result<Loaded, InstallError> {
             }
         }
     };
-    Ok((map, Some(bytes), meta.mode() & 0o777))
+    Ok((
+        map,
+        Some(bytes),
+        agentguard_platform::fs::unix_mode(&meta).unwrap_or(0) & 0o777,
+    ))
 }
 
 fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<(), InstallError> {
     let parent = path
         .parent()
         .ok_or_else(|| err("configuration path has no parent"))?;
-    match DirBuilder::new().mode(0o700).recursive(true).create(parent) {
+    match DirBuilder::new()
+        .unix_mode(0o700)
+        .recursive(true)
+        .create(parent)
+    {
         Ok(()) => {}
         Err(_) => return Err(err(format!("{} cannot be created", parent.display()))),
     }
@@ -203,14 +213,13 @@ fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<(), InstallError
     let mut f = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(mode)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(&tmp)
+        .unix_mode(mode)
+        .open_no_follow(&tmp)
         .map_err(|_| err(format!("{} cannot be written", parent.display())))?;
     f.write_all(bytes)
         .and_then(|()| f.sync_all())
         .map_err(|_| err("the configuration could not be written"))?;
-    let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(mode));
+    let _ = agentguard_platform::fs::set_unix_mode(&tmp, mode);
     fs::rename(&tmp, path).map_err(|_| err("the configuration could not be replaced"))
 }
 
@@ -275,7 +284,7 @@ fn backup(
         return Ok(None);
     };
     DirBuilder::new()
-        .mode(0o700)
+        .unix_mode(0o700)
         .recursive(true)
         .create(dir)
         .map_err(|_| err("the backup directory cannot be created"))?;
@@ -284,9 +293,8 @@ fn backup(
     let mut f = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(0o600)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(&path)
+        .unix_mode(0o600)
+        .open_no_follow(&path)
         .map_err(|_| err("the backup could not be created"))?;
     f.write_all(bytes)
         .and_then(|()| f.sync_all())
@@ -420,7 +428,8 @@ pub struct Installed {
 #[must_use]
 pub fn inspect(provider: Provider, path: &Path) -> Installed {
     let exists = fs::symlink_metadata(path).is_ok();
-    let writable_by_others = fs::metadata(path).is_ok_and(|m| m.mode() & 0o022 != 0);
+    let writable_by_others = fs::metadata(path)
+        .is_ok_and(|m| agentguard_platform::access::of(path, &m).is_ok_and(|a| a.others_can_write));
     let Ok((map, _, _)) = read_config(path) else {
         return Installed {
             exists,
@@ -512,7 +521,8 @@ pub fn file_sha256(path: &Path) -> Option<String> {
     Some(hex::encode(hasher.finalize()))
 }
 
-#[cfg(test)]
+// Unix paths throughout; the Windows path rules are tested in agentguard-core.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -559,8 +569,10 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn unreadable_or_odd_files_are_never_overwritten() {
+        use std::os::unix::fs::MetadataExt;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
         fs::write(&path, "{ not json").unwrap();

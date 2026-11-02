@@ -95,7 +95,7 @@ pub struct Environment {
 fn own_path() -> Option<std::path::PathBuf> {
     std::env::current_exe()
         .ok()
-        .and_then(|p| std::fs::canonicalize(p).ok())
+        .and_then(|p| agentguard_platform::fs::canonicalize(p).ok())
 }
 
 fn caller_environment() -> Vec<(String, String)> {

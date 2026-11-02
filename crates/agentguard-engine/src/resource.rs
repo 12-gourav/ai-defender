@@ -326,17 +326,13 @@ pub(crate) fn combine(
     })
 }
 
-/// Identifier of a path for matching: project-relative inside the project, absolute outside.
+/// Identifier of a path for matching: project-relative inside the project, absolute outside,
+/// with `/` separators on every platform (`C:/Users/u/.ssh/id_rsa` on Windows).
 #[must_use]
 pub fn path_identifier(path: &NormalizedPath, project: &ProjectIdentity) -> String {
-    path.as_path()
-        .strip_prefix(project.root().as_path())
-        .ok()
-        .filter(|rel| !rel.as_os_str().is_empty())
-        .map_or_else(
-            || path.to_string(),
-            |rel| rel.to_string_lossy().into_owned(),
-        )
+    path.relative_to(project.root())
+        .filter(|rel| !rel.is_empty())
+        .unwrap_or_else(|| path.pattern_text())
 }
 
 /// Classify the target of a typed, non-terminal action. Terminal actions are classified from
@@ -407,7 +403,8 @@ pub fn classify_action(
     }
 }
 
-#[cfg(test)]
+// Unix paths throughout; the Windows path rules are tested in agentguard-core.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

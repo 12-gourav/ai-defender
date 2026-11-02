@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::io::{ErrorKind, Read};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
 
 use agentguard_core::{Name, NormalizedPath, PathResolver};
@@ -186,10 +185,9 @@ fn read_passphrase_file(raw: &str) -> Result<Passphrase, EngineError> {
             "the passphrase file must be a regular file, not a symlink",
         ));
     }
-    if meta.uid() != nix::unistd::Uid::current().as_raw() || meta.permissions().mode() & 0o077 != 0
-    {
+    if !agentguard_platform::access::of(path, &meta).is_ok_and(|a| a.is_private()) {
         return Err(denied(
-            "the passphrase file must be owned by you and private (chmod 600)",
+            "the passphrase file must be owned by you and private (chmod 600; on Windows, no access for other users)",
         ));
     }
     if meta.len() > MAX_PASSPHRASE_FILE {

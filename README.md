@@ -349,7 +349,7 @@ signing keys themselves are protected by Argon2id encryption.
 | Linux arm64 | Supported. Static musl engine; full test suite and global-install test on GitHub's Ubuntu ARM64 runner |
 | macOS arm64 (Apple Silicon) | Supported. Full test suite and global-install test on GitHub's macOS 14 runner |
 | macOS x64 (Intel) | Supported. Full test suite and global-install test on GitHub's macOS 15 Intel runner |
-| Windows | **Not supported yet**; npm refuses to install. The platform layer exists, but Windows path rules (case-insensitive names, trailing dots, alternate data streams, short names) must be enforced before an engine is released |
+| Windows | **Not released yet**; npm refuses to install. The engine builds for Windows (owner SIDs, DACLs, Job Objects, and path rules for case, trailing dots and spaces, alternate data streams, device names and `\\?\` prefixes), and CI runs its suite on a Windows runner; it ships once that suite and the remaining items in [KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md) (L117 to L124) are closed |
 
 Storage uses `~/.config/agentguard` on every supported platform (or `$XDG_CONFIG_HOME`).
 

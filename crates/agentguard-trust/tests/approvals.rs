@@ -1,6 +1,8 @@
 //! Phase 5: the approval store and lifecycle against a real trust store on disk. Each test
 //! uses its own temporary trust root. See docs/SECURITY_INVARIANTS.md (Phase 5 table).
 
+// Unix file modes, symlinks and shells throughout; not yet ported to Windows.
+#![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

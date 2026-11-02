@@ -40,7 +40,8 @@ pub const PROTOCOL_VERSION: &str = "agentguard.authz.v1";
 /// Largest request the parser reads.
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
 
-#[cfg(test)]
+// Unix paths throughout; the Windows path rules are tested in agentguard-core.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use agentguard_core::path::LexicalResolver;

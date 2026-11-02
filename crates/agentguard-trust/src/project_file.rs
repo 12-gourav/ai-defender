@@ -423,8 +423,13 @@ mod tests {
 
     fn root() -> (tempfile::TempDir, NormalizedPath) {
         let dir = tempfile::tempdir().unwrap();
-        let p =
-            NormalizedPath::new(fs::canonicalize(dir.path()).unwrap().to_str().unwrap()).unwrap();
+        let p = NormalizedPath::new(
+            agentguard_platform::fs::canonicalize(dir.path())
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        )
+        .unwrap();
         (dir, p)
     }
 

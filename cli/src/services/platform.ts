@@ -60,8 +60,8 @@ const TARGETS: Record<PlatformKey, PlatformTarget> = {
     bundleDir: "binaries/win32-x64",
     binaryName: "agentguard-engine.exe",
     rustTarget: "x86_64-pc-windows-msvc",
-    status: "unsupported",
-    note: "the engine's trust store relies on Unix file ownership and permissions; a Windows implementation (ACLs) is not available yet",
+    status: "untested",
+    note: "the engine builds for Windows (owner SIDs, DACLs, Job Objects, Windows path rules); it is released only after its test suite passes on a Windows runner, and Codex hooks are not supported there yet",
   },
 };
 

@@ -4,4 +4,6 @@ cognitive-complexity-threshold = 25
 # Disallow APIs that would bypass the constructed-environment and no-shell rules in later phases.
 disallowed-methods = [
     { path = "std::process::Command::new", reason = "Phase 1 never executes host processes; later phases go through the execution gateway." },
+    { path = "std::fs::canonicalize", reason = "On Windows it returns \\\\?\\ paths that never prefix-match stored roots; use agentguard_platform::fs::canonicalize." },
+    { path = "std::path::Path::canonicalize", reason = "As std::fs::canonicalize; use agentguard_platform::fs::canonicalize." },
 ]

@@ -69,10 +69,10 @@ impl Pattern {
         !self.0.contains(['*', '?'])
     }
 
-    /// Whether the pattern is absolute (starts with `/`).
+    /// Whether the pattern is absolute: starts with `/`, or on Windows with a drive (`C:/`).
     #[must_use]
     pub fn is_absolute(&self) -> bool {
-        self.0.starts_with('/')
+        self.0.starts_with('/') || (cfg!(windows) && has_drive(&self.0))
     }
 
     /// Whether `text` matches. With `case_insensitive`, ASCII letters compare without case.
@@ -80,6 +80,13 @@ impl Pattern {
     pub fn matches(&self, text: &str, case_insensitive: bool) -> bool {
         glob_matches(&self.0, text, case_insensitive)
     }
+}
+
+/// Whether `text` starts with a drive letter and a separator (`C:/`, `c:\\`).
+#[must_use]
+pub fn has_drive(text: &str) -> bool {
+    let b = text.as_bytes();
+    matches!(b, [d, b':', b'/' | b'\\', ..] if d.is_ascii_alphabetic())
 }
 
 fn tokens(pattern: &str) -> Vec<Token> {

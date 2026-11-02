@@ -3,6 +3,8 @@
 //! Every credential below is fake and nonfunctional; nothing touches the developer's own
 //! repositories or configuration.
 
+// Unix file modes, symlinks and shells throughout; not yet ported to Windows.
+#![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -81,7 +83,7 @@ fn world() -> Option<World> {
         return None;
     }
     let base = tempfile::tempdir().unwrap();
-    let canonical = fs::canonicalize(base.path()).unwrap();
+    let canonical = agentguard_platform::fs::canonicalize(base.path()).unwrap();
     let project = canonical.join("project");
     let home = canonical.join("home");
     let remote = canonical.join("remote.git");

@@ -7,30 +7,21 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::environment::trusted_path;
+use crate::environment::{home, lookup, search_path_value, trusted_path};
 use crate::process::{run, Spawn, Termination};
 use crate::validation::resolve;
 
 /// The first line `program --version` prints, if the program is installed and answers.
 #[must_use]
 pub fn version(program: &str, caller_env: &[(String, String)]) -> Option<String> {
-    let var = |n: &str| {
-        caller_env
-            .iter()
-            .find(|(k, _)| k == n)
-            .map(|(_, v)| v.clone())
-    };
-    let path = trusted_path(var("PATH").as_deref(), Path::new("/nonexistent-project"));
+    let path = trusted_path(
+        lookup(caller_env, "PATH"),
+        Path::new("/nonexistent-project"),
+    );
     let exe = resolve(program, Path::new("/"), &path).ok()?;
-    let mut env = vec![(
-        "PATH".to_owned(),
-        path.iter()
-            .map(|p| p.to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join(":"),
-    )];
-    if let Some(home) = var("HOME") {
-        env.push(("HOME".to_owned(), home));
+    let mut env = vec![("PATH".to_owned(), search_path_value(&path))];
+    if let Some(home) = home(caller_env) {
+        env.push(("HOME".to_owned(), home.to_owned()));
     }
     let args = vec!["--version".to_owned()];
     let r = run(&Spawn {

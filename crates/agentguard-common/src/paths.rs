@@ -149,13 +149,16 @@ impl AppPaths {
         }
         check_private_dir(&self.state_dir)?;
         if let Some(project) = project_root {
-            let state = fs::canonicalize(&self.state_dir).map_err(|source| PathsError::Io {
-                action: "resolving",
-                path: self.state_dir.clone(),
-                source,
-            })?;
-            if let Ok(project) = fs::canonicalize(project) {
-                if state.starts_with(&project) {
+            let state =
+                agentguard_platform::fs::canonicalize(&self.state_dir).map_err(|source| {
+                    PathsError::Io {
+                        action: "resolving",
+                        path: self.state_dir.clone(),
+                        source,
+                    }
+                })?;
+            if let Ok(project) = agentguard_platform::fs::canonicalize(project) {
+                if agentguard_platform::fs::path_starts_with(&state, &project) {
                     return Err(PathsError::InsideProject { state, project });
                 }
             }
@@ -246,6 +249,7 @@ mod tests {
             state_dir: tmp.path().join("state").join("agentguard"),
             runtime_dir: None,
         };
+        #[cfg_attr(not(unix), allow(unused_variables))]
         let created = paths.ensure_state_dir(None).unwrap();
         #[cfg(unix)]
         {

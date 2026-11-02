@@ -4,7 +4,60 @@
 
 use std::fs::{DirBuilder, File, Metadata, OpenOptions};
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// `std::fs::canonicalize` in the form the rest of AgentGuard compares: on Windows without
+/// the `\\?\` prefix (`C:\dir`, `\\server\share\dir`), which the standard library adds and
+/// stored project roots and the caller's paths do not have. A prefix comparison between the
+/// two forms never matches, so mixing them makes "inside the project" checks silently false.
+#[allow(clippy::disallowed_methods)]
+pub fn canonicalize<P: AsRef<Path>>(path: P) -> io::Result<PathBuf> {
+    let canonical = std::fs::canonicalize(path)?;
+    #[cfg(windows)]
+    {
+        Ok(strip_verbatim(canonical))
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(canonical)
+    }
+}
+
+#[cfg(windows)]
+fn strip_verbatim(path: PathBuf) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path;
+    };
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
+/// Whether `path` is `base` or below it, component by component; case-insensitive on Windows,
+/// as NTFS is. Both should come from [`canonicalize`].
+pub fn path_starts_with(path: &Path, base: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let fold = |c: std::path::Component<'_>| -> String {
+            c.as_os_str()
+                .to_string_lossy()
+                .chars()
+                .flat_map(char::to_uppercase)
+                .collect()
+        };
+        let mut own = path.components();
+        base.components()
+            .all(|theirs| own.next().is_some_and(|mine| fold(mine) == fold(theirs)))
+    }
+    #[cfg(not(windows))]
+    {
+        path.starts_with(base)
+    }
+}
 
 /// Open without following a symbolic link (or Windows reparse point) in the final component.
 pub trait OpenNoFollow {

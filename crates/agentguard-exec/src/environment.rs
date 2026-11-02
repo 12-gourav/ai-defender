@@ -10,14 +10,17 @@
 //!
 //! Values are never logged. Records and audit events list the names passed and the number
 //! withheld. The values of withheld credential-like variables are masked in captured output.
+//!
+//! Windows variable names ignore case (`Path` is `PATH`), so names are compared that way there.
 
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use agentguard_core::envvars::{is_secret_name, may_pass};
+use agentguard_platform::fs::{canonicalize, path_starts_with};
 use serde::Serialize;
 
 /// Directories searched after the trusted entries of the caller's `PATH`.
+#[cfg(not(windows))]
 pub const SYSTEM_PATH: &[&str] = &[
     "/usr/local/sbin",
     "/usr/local/bin",
@@ -28,8 +31,53 @@ pub const SYSTEM_PATH: &[&str] = &[
     "/opt/homebrew/bin",
 ];
 
+/// Directories searched after the trusted entries of the caller's `PATH`: the system, and Git
+/// for Windows (`git.exe`, and the `sh.exe` and `bash.exe` shell-mode scripts run with).
+#[cfg(windows)]
+pub const SYSTEM_PATH: &[&str] = &[
+    r"C:\Windows\System32",
+    r"C:\Windows",
+    r"C:\Program Files\Git\cmd",
+    r"C:\Program Files\Git\bin",
+    r"C:\Program Files\Git\usr\bin",
+];
+
+/// Separator between `PATH` entries.
+const PATH_SEPARATOR: &str = if cfg!(windows) { ";" } else { ":" };
+
+#[cfg(not(windows))]
 const MINIMAL: &[&str] = &[
     "HOME", "USER", "LOGNAME", "LANG", "LANGUAGE", "TZ", "TMPDIR",
+];
+
+/// Windows programs fail in odd ways without `SystemRoot`, and find the user's configuration
+/// through `USERPROFILE` and `APPDATA` rather than `HOME`.
+#[cfg(windows)]
+const MINIMAL: &[&str] = &[
+    "HOME",
+    "USERNAME",
+    "USERPROFILE",
+    "USERDOMAIN",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "COMMONPROGRAMFILES",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "NUMBER_OF_PROCESSORS",
+    "PROCESSOR_ARCHITECTURE",
+    "OS",
+    "LANG",
+    "TZ",
 ];
 
 const DEVELOPMENT: &[&str] = &[
@@ -147,30 +195,64 @@ impl BuiltEnvironment {
     }
 }
 
-fn current_uid() -> u32 {
-    nix::unistd::getuid().as_raw()
+/// Whether two variable names are the same variable on this platform.
+fn same_name(a: &str, b: &str) -> bool {
+    if cfg!(windows) {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        a == b
+    }
+}
+
+/// The value of variable `name` in `vars` (ignoring case on Windows).
+#[must_use]
+pub fn lookup<'a>(vars: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    vars.iter()
+        .find(|(k, _)| same_name(k, name))
+        .map(|(_, v)| v.as_str())
+}
+
+/// The home directory: `HOME`, or on Windows `USERPROFILE` when `HOME` is unset (as Git for
+/// Windows does).
+#[must_use]
+pub fn home(vars: &[(String, String)]) -> Option<&str> {
+    lookup(vars, "HOME").or_else(|| {
+        if cfg!(windows) {
+            lookup(vars, "USERPROFILE")
+        } else {
+            None
+        }
+    })
 }
 
 /// Whether `dir` may be searched for executables: absolute, an existing directory owned by
-/// root or the current user, not writable by group or others, and outside `project_root`
-/// (a project can contain anything an agent wrote).
+/// the current user or the system, writable by no one else, and outside `project_root` (a
+/// project can contain anything an agent wrote).
 #[must_use]
 pub fn is_trusted_dir(dir: &Path, project_root: &Path) -> bool {
     if !dir.is_absolute() {
         return false;
     }
-    let Ok(canonical) = std::fs::canonicalize(dir) else {
+    let Ok(canonical) = canonicalize(dir) else {
         return false;
     };
-    if canonical.starts_with(project_root) {
+    if path_starts_with(&canonical, project_root) {
         return false;
     }
     let Ok(meta) = std::fs::metadata(&canonical) else {
         return false;
     };
     meta.is_dir()
-        && (meta.uid() == 0 || meta.uid() == current_uid())
-        && meta.permissions().mode() & 0o022 == 0
+        && agentguard_platform::access::of(&canonical, &meta).is_ok_and(|a| a.is_protected())
+}
+
+/// The value of `PATH` for `dirs`.
+#[must_use]
+pub fn search_path_value(dirs: &[PathBuf]) -> String {
+    dirs.iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join(PATH_SEPARATOR)
 }
 
 /// The trusted search path: the caller's `PATH` entries that pass [`is_trusted_dir`], in
@@ -178,16 +260,13 @@ pub fn is_trusted_dir(dir: &Path, project_root: &Path) -> bool {
 #[must_use]
 pub fn trusted_path(caller_path: Option<&str>, project_root: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
-    let candidates = caller_path
-        .unwrap_or_default()
-        .split(':')
-        .map(PathBuf::from)
+    let candidates = std::env::split_paths(caller_path.unwrap_or_default())
         .chain(SYSTEM_PATH.iter().map(PathBuf::from));
     for dir in candidates {
         if !is_trusted_dir(&dir, project_root) {
             continue;
         }
-        let Ok(canonical) = std::fs::canonicalize(&dir) else {
+        let Ok(canonical) = canonicalize(&dir) else {
             continue;
         };
         if !out.contains(&canonical) {
@@ -205,23 +284,21 @@ pub fn build(
     extra: &[String],
     project_root: &Path,
 ) -> BuiltEnvironment {
-    let caller_path = caller
-        .iter()
-        .find(|(k, _)| k == "PATH")
-        .map(|(_, v)| v.as_str());
+    let caller_path = lookup(caller, "PATH");
     let path = trusted_path(caller_path, project_root);
     let allowed = |name: &str| {
         if name.starts_with("LC_") && may_pass(name) {
             return true;
         }
-        if MINIMAL.contains(&name) {
+        let listed = |list: &[&str]| list.iter().any(|n| same_name(n, name));
+        if listed(MINIMAL) {
             return true;
         }
         if profile == Profile::Development {
-            if AGENT_SOCKETS.contains(&name) {
+            if listed(AGENT_SOCKETS) {
                 return true;
             }
-            return (DEVELOPMENT.contains(&name) || extra.iter().any(|e| e == name))
+            return (listed(DEVELOPMENT) || extra.iter().any(|e| same_name(e, name)))
                 && may_pass(name);
         }
         false
@@ -231,7 +308,7 @@ pub fn build(
     let mut withheld = 0usize;
     let mut secret_values: Vec<String> = Vec::new();
     for (name, value) in caller {
-        if name == "PATH" {
+        if same_name(name, "PATH") {
             continue;
         }
         if allowed(name) && !value.contains('\0') {
@@ -244,14 +321,9 @@ pub fn build(
             }
         }
     }
-    let path_value = path
-        .iter()
-        .map(|p| p.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join(":");
-    vars.push(("PATH".to_owned(), path_value));
+    vars.push(("PATH".to_owned(), search_path_value(&path)));
     for (k, v) in FIXED {
-        vars.retain(|(name, _)| name != k);
+        vars.retain(|(name, _)| !same_name(name, k));
         vars.push(((*k).to_owned(), (*v).to_owned()));
     }
     vars.sort();
@@ -268,7 +340,8 @@ pub fn build(
     }
 }
 
-#[cfg(test)]
+// Unix paths throughout; the Windows path rules are tested in agentguard-core.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -344,7 +417,7 @@ mod tests {
     #[test]
     fn path_keeps_only_trusted_directories() {
         let dir = tempfile::tempdir().unwrap();
-        let project = std::fs::canonicalize(dir.path()).unwrap();
+        let project = agentguard_platform::fs::canonicalize(dir.path()).unwrap();
         let inside = project.join("node_modules/.bin");
         std::fs::create_dir_all(&inside).unwrap();
         let path = format!("{}:.::relative:/tmp:/usr/bin", inside.display());

@@ -2,6 +2,8 @@
 //! bytes in, response and audit records out, against a real temporary project directory and the
 //! filesystem path resolver. See docs/SECURITY_INVARIANTS.md for the mapping.
 
+// Unix file modes, symlinks and shells throughout; not yet ported to Windows.
+#![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -52,7 +54,13 @@ struct Harness {
 }
 
 fn canonical(p: &Path) -> NormalizedPath {
-    NormalizedPath::new(fs::canonicalize(p).unwrap().to_str().unwrap()).unwrap()
+    NormalizedPath::new(
+        agentguard_platform::fs::canonicalize(p)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
 }
 
 fn rule(id: &str, decision: Decision, matcher: ActionMatcher) -> Rule {

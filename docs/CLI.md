@@ -34,7 +34,7 @@ The npm package has **no dependencies** and runs no install scripts. It carries 
 | linux-arm64 | supported: static musl engine; Rust suite and global-install test on GitHub's Ubuntu ARM64 runner |
 | darwin-arm64 | supported: Rust suite and global-install test on GitHub's macOS 14 runner |
 | darwin-x64 | supported: Rust suite and global-install test on GitHub's macOS 15 Intel runner |
-| win32-x64 | **not released**: the platform layer (owner SIDs, DACLs, reparse points, Job Objects) builds, but Windows path rules must be enforced first; npm refuses to install `ai-defender` on Windows (`os` field) |
+| win32-x64 | **not released**: the engine builds for Windows (owner SIDs, DACLs, reparse points, Job Objects, Windows path rules) and CI runs its suite on `windows-latest`; npm refuses to install `ai-defender` on Windows (`os` field) until an engine is released (KNOWN_LIMITATIONS L117 to L124) |
 
 Configuration directories are XDG-style (`~/.config`) on every platform, including macOS. Any other platform, or a package without an engine for the platform, gets a clear error with exit code 3.
 

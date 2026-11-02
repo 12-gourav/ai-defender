@@ -30,7 +30,7 @@ impl PathResolver for FsPathResolver {
         let mut existing = joined.clone();
         let mut tail: Vec<std::ffi::OsString> = Vec::new();
         let canonical = loop {
-            match fs::canonicalize(&existing) {
+            match agentguard_platform::fs::canonicalize(&existing) {
                 Ok(c) => break c,
                 Err(e) if e.kind() == ErrorKind::NotFound => {
                     if fs::symlink_metadata(&existing).is_ok() {
@@ -76,13 +76,20 @@ impl PathResolver for FsPathResolver {
     }
 }
 
-#[cfg(test)]
+// Unix paths throughout; the Windows path rules are tested in agentguard-core.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
 
     fn np(p: &std::path::Path) -> NormalizedPath {
-        NormalizedPath::new(fs::canonicalize(p).unwrap().to_str().unwrap()).unwrap()
+        NormalizedPath::new(
+            agentguard_platform::fs::canonicalize(p)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        )
+        .unwrap()
     }
 
     #[test]

@@ -95,8 +95,8 @@ test("a manifest naming another package is rejected", () => {
 test("engine resolution: unsupported platforms, missing engines, bundled engines and the development override", () => {
   const base = { env: {}, trustedKeys: [] as ReleaseKey[], platformLabel: "x" };
   rejects(() => resolveEngine({ ...base, target: undefined }), /does not support this platform/);
-  rejects(() => resolveEngine({ ...base, target: detectPlatform("win32", "x64") }), /not available for win32-x64/);
   const root = tempDir("agentguard-root-");
+  rejects(() => resolveEngine({ ...base, target: detectPlatform("win32", "x64"), packageRoot: root }), /does not include an engine for win32-x64/);
   rejects(() => resolveEngine({ ...base, target, packageRoot: root }), /does not include an engine for linux-x64/);
   const { dir, keys } = packageWith();
   cpSync(dir, path.join(root, "binaries", "linux-x64"), { recursive: true });

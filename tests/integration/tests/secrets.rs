@@ -3,6 +3,8 @@
 //! installed). Every credential below is fake and nonfunctional.
 //! See docs/SECURITY_INVARIANTS.md (Phase 6 table).
 
+// Unix file modes, symlinks and shells throughout; not yet ported to Windows.
+#![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -48,7 +50,13 @@ struct World {
 }
 
 fn canonical(p: &Path) -> NormalizedPath {
-    NormalizedPath::new(fs::canonicalize(p).unwrap().to_str().unwrap()).unwrap()
+    NormalizedPath::new(
+        agentguard_platform::fs::canonicalize(p)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
 }
 
 fn write(root: &Path, rel: &str, content: &str) {

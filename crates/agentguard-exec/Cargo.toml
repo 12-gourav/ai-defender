@@ -12,6 +12,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+agentguard-platform = { workspace = true }
 agentguard-core = { workspace = true }
 agentguard-engine = { workspace = true }
 agentguard-proto = { workspace = true }
@@ -24,6 +25,8 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["signal", "process", "poll", "resource"] }
 
 [dev-dependencies]

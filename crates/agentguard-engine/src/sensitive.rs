@@ -303,7 +303,8 @@ pub fn categorize(resource: &mut ResourceClassification, sensitivity: &Sensitivi
     resource.sensitive = category_from_name(resource.kind, &resource.targets);
 }
 
-#[cfg(test)]
+// Unix paths throughout; the Windows path rules are tested in agentguard-core.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::resource::ResourceLocation;

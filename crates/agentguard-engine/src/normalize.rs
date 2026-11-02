@@ -1179,6 +1179,7 @@ fn looks_like_path(arg: &str) -> Option<&str> {
         || value.starts_with('.')
         || value.starts_with('~')
         || value.contains('/')
+        || (cfg!(windows) && (value.contains('\\') || crate::pattern::has_drive(value)))
         || kind_of_relative_text(value) != ResourceKind::SourceCode;
     pathish.then_some(value)
 }
@@ -1603,7 +1604,8 @@ pub fn normalize(
     }
 }
 
-#[cfg(test)]
+// Unix paths throughout; the Windows path rules are tested in agentguard-core.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

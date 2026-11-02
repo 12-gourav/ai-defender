@@ -436,7 +436,7 @@ fn scanner<'a>(
     options: &'a ScanOptions,
     set: &'a DetectorSet,
 ) -> Result<Scanner<'a>, ScanError> {
-    let root = fs::canonicalize(root).map_err(|_| ScanError::Root)?;
+    let root = agentguard_platform::fs::canonicalize(root).map_err(|_| ScanError::Root)?;
     if !root.is_dir() {
         return Err(ScanError::Root);
     }

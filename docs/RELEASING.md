@@ -16,6 +16,9 @@ One package, `ai-defender`:
 | `README.md`, `SECURITY.md`, `LICENSE` | Copied from the repository root by `npm run sync-docs` |
 
 Released platforms: `linux-x64`, `linux-arm64` (static musl), `darwin-x64`, `darwin-arm64`.
+`win32-x64` is not released yet: it needs a green `tests (win32-x64)` CI job, a Windows entry in
+the release workflow, a Windows global-install test, and `win32` in `os` (KNOWN_LIMITATIONS L117
+to L124).
 `package.json` declares exactly those in `os` and `cpu`; `npm run pack:check -- --release` refuses
 a package whose `os`/`cpu` and bundled engines differ. Windows is not released (see
 `KNOWN_LIMITATIONS.md`).

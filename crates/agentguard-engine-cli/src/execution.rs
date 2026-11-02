@@ -173,11 +173,7 @@ fn git_context(
     let project_root = registered_root(env, &cwd);
     let registered = project_root.is_some();
     let anchor = project_root.unwrap_or_else(|| cwd.as_path().to_path_buf());
-    let caller_path = env
-        .process_env
-        .iter()
-        .find(|(k, _)| k == "PATH")
-        .map(|(_, v)| v.as_str());
+    let caller_path = agentguard_exec::environment::lookup(&env.process_env, "PATH");
     let path = trusted_path(caller_path, &anchor);
     let git = resolve("git", cwd.as_path(), &path).map_err(|_| {
         EngineError::new(
@@ -185,16 +181,13 @@ fn git_context(
             "git was not found in the trusted search path",
         )
     })?;
-    let home = env
-        .process_env
-        .iter()
-        .find(|(k, _)| k == "HOME")
-        .map(|(_, v)| v.as_str());
+    let home = agentguard_exec::environment::home(&env.process_env);
     let plumbing = Plumbing::new(&git.path, cwd.as_path(), &path, home);
+    // Unregistered: every repository counts as inside, as below `/` (or the drive root).
     let root_for_check = if registered {
         anchor.as_path()
     } else {
-        Path::new("/")
+        cwd.as_path().ancestors().last().unwrap_or(Path::new("/"))
     };
     let ctx = GitContext::inspect(&plumbing, root_for_check, with_status).ok_or_else(|| {
         EngineError::new(
