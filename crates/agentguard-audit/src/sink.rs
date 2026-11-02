@@ -116,6 +116,14 @@ impl JsonlSink {
             action: "read",
             source,
         })?;
+        // Waits for an append in progress. Windows locks are mandatory: without it, reading
+        // while another process appends fails outright (ERROR_LOCK_VIOLATION); on Unix it keeps
+        // a half-written last line from being read as a malformed record.
+        file.lock_shared().map_err(|source| AuditError::Io {
+            path: path.to_path_buf(),
+            action: "lock",
+            source,
+        })?;
         let reader = BufReader::new(file);
         let mut out = Vec::new();
         for (idx, line) in reader.lines().enumerate() {
