@@ -396,6 +396,7 @@ fn force_push_is_denied_unless_trusted_policy_permits_approval() {
         &w.human.store,
         SigningRole::Policy,
         &Passphrase::new(PASS.to_owned()).unwrap(),
+        time::OffsetDateTime::now_utc(),
     )
     .unwrap();
     let audit = w.human.store.open_audit_log().unwrap();

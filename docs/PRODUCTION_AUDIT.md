@@ -40,7 +40,7 @@ port or lock.
 | Windows | The workspace does not compile for Windows: 59 Unix-specific call sites in 23 files (`O_NOFOLLOW` opens, owner and mode checks on the trust store, process groups, signals, `rlimit`). Each is security-relevant; a port needs Windows equivalents (reparse-point handling, owner and DACL checks, Job Objects), not stubs. | Blocks Windows |
 | macOS | Code is POSIX and expected to compile, but it has never been built or tested on macOS. Building needs a macOS runner; cross-compiling from Linux needs Apple's SDK, which is not licensed for that. | Blocks macOS |
 | Linux arm64 | Static musl binary builds locally (4.4 MB). Not executed: no arm64 machine or emulator available here. | Blocks claim |
-| Distribution | Engines ship as separate per-platform npm packages (`ai-defender-engine-*`). The brief requires one package. | Change |
+| Distribution | Engines shipped as separate per-platform npm packages (`ai-defender-engine-*`). The brief requires one package. | Done in 0.2.0 |
 | Passphrase attempts | No attempt limiting. Offline guessing is bounded by Argon2id; the interactive path has no backoff. | Medium |
 | Uninstall | No `ai-defender uninstall`. `integrations uninstall` exists (passphrase-protected). | Missing |
 | OS key stores | Not used. Keys are passphrase-encrypted files; see the decision below. | Decision |
@@ -63,3 +63,16 @@ port or lock.
   option only for non-authorising material.
 - **Only validated platforms are published.** A platform is declared in `os`/`cpu` and documented
   only after its engine has passed the test suite on that platform.
+
+## Outcome for 0.2.0 (2026-11-02)
+
+| Item | Result |
+|---|---|
+| One package | `ai-defender` bundles the four engines; no dependencies, scripts or downloads |
+| Linux x64/arm64, macOS x64/arm64 | Full Rust suite and global-install test on each platform's GitHub runner |
+| Windows | Platform layer done (owner SIDs, DACLs, reparse points, file identity, Job Objects) and the audit, secrets, common and trust crates compile for Windows. Not released: path rules for case-insensitive names, trailing dots and spaces, alternate data streams, 8.3 names and device names come first, with a bypass test suite on Windows CI. Planned for 0.3.0 |
+| Master password | The signing-key passphrase; wrong attempts now back off (five free, then 30 s doubling to 15 min) |
+| Uninstall | `ai-defender uninstall [--purge]`, engine-side `system.uninstall`: passphrase, agents refused, history kept unless purged; `npm uninstall -g` bypass documented |
+| Found and fixed during hardening | A repository-planted Git filter ran during `git status`/`inspect` (via `write-tree`); a project directory recreated at the same path was accepted on ext4 (inode reuse) |
+| Cursor, Antigravity | Researched (`AGENT_INTEGRATION_RESEARCH.md`); adapters planned for 0.3.0 |
+| Perplexity | No interception mechanism exists; unsupported |

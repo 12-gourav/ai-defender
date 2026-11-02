@@ -24,23 +24,19 @@ Since Phase 7, `ai-defender run` controls the commands routed through it (policy
 npm install -g ai-defender
 ```
 
-The npm package itself has **no runtime dependencies** and runs no install scripts. The engine is a separate per-platform package, selected by npm's `os`/`cpu` matching (see §8). Rust and Cargo are not needed to use a release.
+The npm package has **no dependencies** and runs no install scripts. It carries one engine per supported platform under `binaries/<platform>/` and uses the one for the current OS and CPU (see §8). Rust and Cargo are not needed to use a release.
 
 ### Supported platforms
 
-| Platform | Engine package | Status |
-|---|---|---|
-| linux-x64 | `ai-defender-engine-linux-x64` | **validated**: built and tested (Rust, CLI and global-install end-to-end suites); release builds are static musl |
-| linux-arm64 | `ai-defender-engine-linux-arm64` | built by the release workflow (static musl, cross); not tested on hardware |
-| darwin-x64, darwin-arm64 | `ai-defender-engine-darwin-*` | built and Rust-tested by CI on macOS runners; end-to-end behaviour not yet validated; configuration directories are XDG-style (`~/.config`), not `~/Library` |
-| win32-x64 | none published | **unsupported**: the trust store depends on Unix ownership, permissions and `O_NOFOLLOW`; npm refuses to install `ai-defender` on Windows (`os` field) |
+| Platform | Status |
+|---|---|
+| linux-x64 | supported: static musl engine; Rust suite and global-install test on GitHub's Ubuntu runner |
+| linux-arm64 | supported: static musl engine; Rust suite and global-install test on GitHub's Ubuntu ARM64 runner |
+| darwin-arm64 | supported: Rust suite and global-install test on GitHub's macOS 14 runner |
+| darwin-x64 | supported: Rust suite and global-install test on GitHub's macOS 15 Intel runner |
+| win32-x64 | **not released**: the platform layer (owner SIDs, DACLs, reparse points, Job Objects) builds, but Windows path rules must be enforced first; npm refuses to install `ai-defender` on Windows (`os` field) |
 
-Any other platform, or a platform without an installed engine package, gets a clear error with exit code 3.
-
-**Release status:**
-- Engine packages are **not published**.
-- **No release signing key has been provisioned:** `release-keys.json` is empty, so release verification fails closed.
-- Until both exist, only the development path (§9) works.
+Configuration directories are XDG-style (`~/.config`) on every platform, including macOS. Any other platform, or a package without an engine for the platform, gets a clear error with exit code 3.
 
 ## 3. Commands
 
@@ -99,6 +95,7 @@ Managed execution: [EXECUTION.md](EXECUTION.md). Global options go before `run`;
 | `ai-defender integrations status [claude\|codex]` | installed entries, hook executable checks, provider version and compatibility, last health check, enforcement statement | no |
 | `ai-defender integrations install claude\|codex` | add AI Defender's hooks to `~/.claude/settings.json` or `~/.codex/hooks.json` (confirmation; backup first; other settings and hooks kept) | provider configuration |
 | `ai-defender integrations uninstall claude\|codex` | remove only AI Defender's entries (confirmation and passphrase) | provider configuration |
+| `ai-defender uninstall [--purge]` | the supported removal: after confirmation and the passphrase, remove AI Defender's hooks from every provider (other entries kept, backed up) and its engine copies; keep keys, policy, registry and history unless `--purge` is confirmed by typing `purge`; then print `npm uninstall -g ai-defender` | provider configuration, engine copies, trust store with `--purge` |
 | `ai-defender integrations verify [claude\|codex]` | configuration, permissions, executable identity, trusted state, synthetic hook checks; exit 5 on any failure | records a health check |
 | `ai-defender integrations coverage [claude\|codex]` | protected, observed, unsupported and bypassable tool paths | no |
 
@@ -251,13 +248,15 @@ One process per command:
 ## 8. Binary distribution
 
 ```
-ai-defender (npm)                        ai-defender-engine-<platform> (npm, os/cpu-restricted, optionalDependencies)
-  build/src/…            ── resolves ──▶   bin/agentguard-engine[.exe]
-  release-keys.json (public keys)          engine-manifest.json  { schema, body, key_id, signature }
+ai-defender (npm, one package)
+  build/src/…                              the CLI
+  binaries/<platform>/bin/agentguard-engine
+  binaries/<platform>/engine-manifest.json { schema, body, key_id, signature }
+  release-keys.json                        public keys only
 ```
 
 **Manifest body:**
-- package;
+- package (always `ai-defender`);
 - version;
 - platform;
 - binary path;
@@ -269,31 +268,15 @@ ai-defender (npm)                        ai-defender-engine-<platform> (npm, os/
 **Before every command the CLI checks:**
 1. the manifest structure;
 2. that the signature verifies with a key from `release-keys.json`, using Node's built-in Ed25519 (no dependency);
-3. that the platform and package name match;
+3. that the platform matches and the package is `ai-defender`;
 4. that the protocol version is 1;
-5. that the binary is inside its package after resolving symlinks, with the expected file name;
+5. that the binary is inside its directory after resolving symlinks, with the expected file name;
 6. that the binary is a regular file of plausible size;
 7. that the SHA-256 matches.
 
 Any failure is exit 3, with no fallback.
 
-**Release procedure** (scripts in `cli/scripts/`; the private key never enters the repository or a package):
-
-```sh
-openssl genpkey -algorithm ed25519 -out agentguard-release-ed25519.pem        # once, kept offline
-node cli/scripts/sign-engine-manifest.mjs --print-public-key --key agentguard-release-ed25519.pem
-#   → add {"publicKey": "<hex>"} to cli/release-keys.json
-cargo build --release -p agentguard-engine-cli --target <triple>
-node cli/scripts/build-engine-package.mjs --platform linux-x64 --binary target/<triple>/release/agentguard-engine --version 0.1.0 --out dist/engine-linux-x64
-node cli/scripts/sign-engine-manifest.mjs --manifest dist/engine-linux-x64/engine-manifest.json --key agentguard-release-ed25519.pem
-npm publish dist/engine-linux-x64 && (cd cli && npm run pack:check && npm publish)
-```
-
-**Not yet in place:**
-- the per-platform packages listed as `optionalDependencies` of `ai-defender`;
-- cross-compiled builds for non-Linux targets;
-- CI publishing;
-- the release key itself.
+**Release procedure:** [RELEASING.md](RELEASING.md). CI builds and tests each engine on its own platform; the release owner signs the manifests locally with the offline key, checks the package with `npm run pack:check -- --release`, and publishes the one tarball.
 
 ## 9. Local development
 

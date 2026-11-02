@@ -63,6 +63,8 @@ Commands:
   repair                Re-point degraded or outdated agent hooks at a verified engine copy
                         (never repairs tampered trusted state)
   update                Show versions and how to upgrade (npm upgrades; nothing is downloaded)
+  uninstall             Remove AI Defender's hooks and engine copies (password), then
+                        "npm uninstall -g ai-defender"; keys and history kept unless --purge
   version               Show CLI, engine and protocol versions
 
 Options:
@@ -79,6 +81,7 @@ Options:
   --no-default-exclusions  Also scan node_modules, target, build output and similar
   --blocked, --approvals   Filter history
   --limit N             Number of history events (1 to 500, default 30)
+  --purge               With uninstall: also delete signing keys, policy and audit history
   -v, --verbose         Show engine location details
   -h, --help            Show this help
   -V, --version         Show versions

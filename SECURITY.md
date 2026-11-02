@@ -59,11 +59,13 @@ Out of scope, for this release:
 
 ## Binary verification
 
-- The engine ships in per-platform npm packages (`ai-defender-engine-<platform>`). Each package
-  carries an `engine-manifest.json` with:
+- The `ai-defender` npm package carries one engine per supported platform under
+  `binaries/<platform>/`, each with an `engine-manifest.json` holding:
   - the package name and version;
   - the platform and binary path;
   - the binary's SHA-256 and the engine protocol version.
+- Engines are built and tested in CI on each platform's own runner; their manifests are signed
+  afterwards on the release owner's machine, so CI never holds the release key.
 - The manifest is signed with an Ed25519 **release key**. Only the public key is embedded in the
   `ai-defender` package (`release-keys.json`). The private key is held offline by the release
   owner and never enters the repository, CI logs or packages.

@@ -32,6 +32,7 @@
 )]
 
 pub mod approvals;
+pub mod attempts;
 pub mod canonical;
 pub mod crypto;
 pub mod error;

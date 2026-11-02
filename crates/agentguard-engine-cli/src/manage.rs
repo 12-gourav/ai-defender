@@ -95,7 +95,12 @@ impl Authority<'_> {
     fn signer(&mut self) -> Result<&Ed25519Signer, EngineError> {
         if self.unlocked.is_none() {
             let phrase = self.passphrase()?;
-            self.unlocked = Some(unlock(&self.env.store, SigningRole::Policy, &phrase)?);
+            self.unlocked = Some(unlock(
+                &self.env.store,
+                SigningRole::Policy,
+                &phrase,
+                self.env.clock.now(),
+            )?);
         }
         self.unlocked
             .as_ref()

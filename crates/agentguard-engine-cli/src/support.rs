@@ -8,6 +8,7 @@ use std::path::Path;
 use agentguard_core::{Name, NormalizedPath, PathResolver};
 use agentguard_engine::approval::Approver;
 use agentguard_engine::FsPathResolver;
+use agentguard_trust::attempts::AttemptGate;
 use agentguard_trust::keyfile::{read_key_file, KeyFileError, Passphrase, SigningRole};
 use agentguard_trust::registry::{DirectoryIdentity, RegistryBody};
 use agentguard_trust::{Ed25519Signer, ProjectRegistration, TrustError, TrustStore, VerifiedTrust};
@@ -220,12 +221,25 @@ pub fn passphrase(inline: Option<String>, file: Option<String>) -> Result<Passph
     }
 }
 
-/// Unlock a signing key from the store.
+/// Unlock a signing key from the store. Wrong passphrases are counted: after five in a row each
+/// attempt waits, 30 seconds doubling up to 15 minutes ([`AttemptGate`]).
 pub fn unlock(
     store: &TrustStore,
     role: SigningRole,
     passphrase: &Passphrase,
+    now: time::OffsetDateTime,
 ) -> Result<Ed25519Signer, EngineError> {
+    let gate = AttemptGate::new(store);
+    if let Err(wait) = gate.check(now) {
+        return Err(EngineError::new(
+            ErrorCode::AuthorizationFailed,
+            format!(
+                "{} wrong passphrases in a row; the next attempt is allowed in {} seconds",
+                wait.failures, wait.retry_after_secs
+            ),
+        )
+        .recovery("wait, then use the correct passphrase; each further wrong attempt doubles the delay (up to 15 minutes)"));
+    }
     let file = read_key_file(&store.signing_key_path(role)).map_err(|e| match e {
         KeyFileError::Missing => EngineError::new(
             ErrorCode::AuthorizationFailed,
@@ -234,8 +248,21 @@ pub fn unlock(
         .recovery("restore it from your backup; without it trusted state cannot be changed"),
         other => EngineError::new(ErrorCode::AuthorizationFailed, other.to_string()),
     })?;
-    file.open(role, passphrase)
-        .map_err(|e| EngineError::new(ErrorCode::AuthorizationFailed, e.to_string()))
+    match file.open(role, passphrase) {
+        Ok(signer) => {
+            gate.record_success();
+            Ok(signer)
+        }
+        Err(e) => {
+            if e == KeyFileError::Unlock {
+                gate.record_failure(now);
+            }
+            Err(EngineError::new(
+                ErrorCode::AuthorizationFailed,
+                e.to_string(),
+            ))
+        }
+    }
 }
 
 /// The human requester named by the CLI (attribution; authorisation is the signing key).

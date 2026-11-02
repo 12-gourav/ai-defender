@@ -211,6 +211,37 @@ fn wrong_passphrase_registers_nothing_and_writes_no_config() {
 }
 
 #[test]
+fn repeated_wrong_passphrases_lock_out_even_the_correct_one_until_the_delay_passes() {
+    let w = initialised();
+    let other = w.project.parent().unwrap().join("other");
+    fs::create_dir_all(other.join(".git")).unwrap();
+    let attempt = |passphrase: &str| {
+        let mut a = init_args(&w, json!({ "passphrase": passphrase }));
+        a["working_directory"] = json!(other.to_str().unwrap());
+        call(&w, "project.init", a)
+    };
+    for _ in 0..5 {
+        assert_eq!(
+            code(&attempt("wrong horse battery staple")),
+            "authorization-failed"
+        );
+    }
+    let locked = attempt(PASS);
+    assert_eq!(code(&locked), "authorization-failed", "{locked}");
+    let message = locked["error"]["message"].as_str().unwrap();
+    assert!(message.contains("5 wrong passphrases"), "{message}");
+    assert!(!other.join(".agentguard").exists());
+    // Backdating the record stands in for waiting 30 seconds.
+    let record = w.trust_root.join("keys/attempts.json");
+    let mut state: Value = serde_json::from_slice(&fs::read(&record).unwrap()).unwrap();
+    state["last_failure"] = json!(state["last_failure"].as_i64().unwrap() - 31);
+    fs::write(&record, serde_json::to_vec(&state).unwrap()).unwrap();
+    let ok = attempt(PASS);
+    assert!(ok["success"].as_bool().unwrap(), "{ok}");
+    assert!(!record.exists(), "a correct passphrase resets the count");
+}
+
+#[test]
 fn project_restrictions_are_approved_and_drift_is_reported() {
     let w = initialised();
     let config = w.project.join(".agentguard/config.yaml");

@@ -4,7 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { before, test } from "node:test";
 
@@ -124,4 +124,40 @@ test("doctor, dashboard, policy validate, update and repair report real state", 
   assert.equal(repaired.code, ExitCode.Ok, repaired.stderr);
   const actions = (JSON.parse(repaired.stdout) as { data: { actions: Array<{ action: string }> } }).data.actions;
   assert.deepEqual(actions.map((a) => a.action), ["skipped", "skipped"], "nothing installed, nothing repaired");
+});
+
+test("uninstall needs the password, removes hooks and engine copies, and keeps history unless purged", async () => {
+  const w = await world();
+  const settings = path.join(w.box.home, ".claude", "settings.json");
+  mkdirSync(path.dirname(settings), { recursive: true });
+  writeFileSync(settings, `${JSON.stringify({ theme: "dark" })}\n`);
+  const installed = await cli(["integrations", "install", "claude", "--non-interactive", "--yes"], { env: w.box.env, cwd: w.a });
+  assert.equal(installed.code, ExitCode.Ok, installed.stderr);
+  const store = path.join(w.box.home, ".config", "agentguard");
+  assert.ok(existsSync(path.join(store, "engine")));
+  const hooked = () => readFileSync(settings, "utf8").includes("agentguard-engine");
+  assert.ok(hooked());
+
+  const unconfirmed = await cli(["uninstall", "--non-interactive", "--passphrase-file", w.pass], { env: w.box.env, cwd: w.a });
+  assert.equal(unconfirmed.code, ExitCode.ActionRequired, unconfirmed.stderr);
+  const wrong = path.join(w.box.home, "wrong.txt");
+  writeFileSync(wrong, "wrong horse battery staple\n");
+  chmodSync(wrong, 0o600);
+  const refused = await cli(["uninstall", "--non-interactive", "--yes", "--passphrase-file", wrong], { env: w.box.env, cwd: w.a });
+  assert.notEqual(refused.code, ExitCode.Ok);
+  assert.ok(hooked(), "a wrong password removes nothing");
+
+  const done = await cli(["--json", "uninstall", "--non-interactive", "--yes", "--passphrase-file", w.pass], { env: w.box.env, cwd: w.a });
+  assert.equal(done.code, ExitCode.Ok, done.stderr);
+  const data = (JSON.parse(done.stdout) as { data: { password_verified: boolean; trust_store_deleted: boolean; next: string } }).data;
+  assert.equal(data.password_verified, true);
+  assert.equal(data.trust_store_deleted, false);
+  assert.equal(data.next, "npm uninstall -g ai-defender");
+  assert.deepEqual(JSON.parse(readFileSync(settings, "utf8")), { theme: "dark" });
+  assert.ok(!existsSync(path.join(store, "engine")));
+  for (const kept of ["keys", "registry", "audit"]) assert.ok(existsSync(path.join(store, kept)), `${kept} kept`);
+
+  const purged = await cli(["--json", "uninstall", "--purge", "--non-interactive", "--yes", "--passphrase-file", w.pass], { env: w.box.env, cwd: w.a });
+  assert.equal((JSON.parse(purged.stdout) as { data: { trust_store_deleted: boolean } }).data.trust_store_deleted, true, purged.stderr);
+  assert.ok(!existsSync(store));
 });

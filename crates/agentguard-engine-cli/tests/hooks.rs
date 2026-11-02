@@ -772,6 +772,78 @@ fn install_verify_and_uninstall() {
     assert!(backups.len() >= 2, "every change was backed up first");
 }
 
+#[test]
+fn system_uninstall_needs_the_password_and_keeps_history_unless_purged() {
+    let Some(w) = world() else { return };
+    let settings = w.home.join(".claude/settings.json");
+    fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    let user = json!({"theme": "dark", "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "/usr/local/bin/other-guard"}]}]}});
+    fs::write(&settings, serde_json::to_vec_pretty(&user).unwrap()).unwrap();
+    for provider in ["claude", "codex"] {
+        let r = call(
+            &w.human,
+            "integrations.install",
+            json!({"provider": provider, "confirm": true}),
+        );
+        assert_eq!(r["success"], true, "{r}");
+    }
+    assert!(w.trust_root.join("engine").exists());
+    let uninstall = |env: &Environment, extra: Value| {
+        let mut a = json!({"confirm": true, "requested_by": "dev"});
+        a.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        call(env, "system.uninstall", a)
+    };
+    // An agent cannot uninstall, even with the password.
+    let agent = env_for(&w.trust_root, &w.home, Some(AgentKind::ClaudeCode));
+    let r = uninstall(&agent, json!({"passphrase": PASS}));
+    assert_eq!(r["error"]["code"], "authorization-failed", "{r}");
+    // No password, a wrong password, or no confirmation: nothing is removed.
+    assert_eq!(uninstall(&w.human, json!({}))["success"], false);
+    let r = uninstall(
+        &w.human,
+        json!({"passphrase": "wrong horse battery staple"}),
+    );
+    assert_eq!(r["error"]["code"], "authorization-failed", "{r}");
+    let r = call(
+        &w.human,
+        "system.uninstall",
+        json!({"confirm": false, "requested_by": "dev", "passphrase": PASS}),
+    );
+    assert_eq!(r["error"]["code"], "confirmation-required");
+    let installed: Value = serde_json::from_slice(&fs::read(&settings).unwrap()).unwrap();
+    assert_ne!(installed, user, "hooks still installed");
+    // Purge needs its own confirmation word.
+    let r = uninstall(&w.human, json!({"passphrase": PASS, "purge": true}));
+    assert_eq!(r["error"]["code"], "confirmation-required", "{r}");
+    // The real thing: hooks gone, other settings exactly restored, history kept.
+    let r = uninstall(&w.human, json!({"passphrase": PASS}));
+    assert_eq!(r["success"], true, "{r}");
+    let after: Value = serde_json::from_slice(&fs::read(&settings).unwrap()).unwrap();
+    assert_eq!(after, user);
+    assert_eq!(r["data"]["password_verified"], true);
+    assert_eq!(r["data"]["engine_copies_removed"], true);
+    assert_eq!(r["data"]["trust_store_deleted"], false);
+    assert!(!w.trust_root.join("engine").exists());
+    for kept in ["keys", "registry", "audit", "trusted"] {
+        assert!(w.trust_root.join(kept).exists(), "{kept} was deleted");
+    }
+    assert_eq!(
+        r["data"]["project_configurations"][0],
+        json!(w.project.join(".agentguard").display().to_string())
+    );
+    // Purge with the confirmation word deletes the trust store; it can then run again freely.
+    let r = uninstall(
+        &w.human,
+        json!({"passphrase": PASS, "purge": true, "purge_confirmation": "purge"}),
+    );
+    assert_eq!(r["data"]["trust_store_deleted"], true, "{r}");
+    assert!(!w.trust_root.exists());
+    let r = uninstall(&w.human, json!({}));
+    assert_eq!(r["data"]["password_verified"], false, "{r}");
+}
+
 /// End to end through the real engine process: a hook with no usable trusted state blocks.
 #[test]
 fn the_hook_process_fails_closed() {

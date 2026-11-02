@@ -406,7 +406,7 @@ pub fn approve(env: &Environment, arguments: Value) -> Result<Value, EngineError
     require_confirmation(a.confirm, "approving an operation")?;
     let phrase = passphrase(a.passphrase, None)?;
     let trust = verified(&env.store)?;
-    let signer = unlock(&env.store, SigningRole::Policy, &phrase)?;
+    let signer = unlock(&env.store, SigningRole::Policy, &phrase, env.clock.now())?;
     let audit = audit_log(env)?;
     let store = ApprovalStore::new(&env.store);
     let record = store.peek(id).map_err(|e| approval_error(&e))?;

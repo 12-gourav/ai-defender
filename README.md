@@ -116,11 +116,11 @@ ai-defender --version
 ai-defender doctor
 ```
 
-npm installs the precompiled engine for your platform as a separate optional package
-(`ai-defender-engine-<platform>`). Before every use, the CLI checks that the engine's manifest is
-signed by an AI Defender release key embedded in the package. It also checks the platform and
-the binary's SHA-256. A binary that fails any check is never executed. Installation runs no
-scripts.
+The one `ai-defender` package carries a precompiled engine for each supported platform and
+picks yours. Before every use, the CLI checks that the engine's manifest is signed by an AI
+Defender release key shipped in the package. It also checks the platform and the binary's
+SHA-256. A binary that fails any check is never executed. Installation runs no scripts, has no
+dependencies and downloads nothing.
 
 ## Quick start
 
@@ -210,6 +210,7 @@ it again. A registration never silently follows a directory.
 | `ai-defender integrations [list\|status\|install\|uninstall\|verify\|coverage]` | Agent hooks |
 | `ai-defender repair` | Re-point degraded or outdated hooks at a verified engine (never repairs tampered trust) |
 | `ai-defender update` | Show versions and how to upgrade |
+| `ai-defender uninstall [--purge]` | Remove hooks and engine copies (password); `--purge` also deletes keys and history |
 | `ai-defender --version`, `--help` | |
 
 Global options: `--json` (machine-readable output), `--no-color`, `--non-interactive`, `--yes`.
@@ -313,26 +314,42 @@ storage, so your identity, projects and history carry over unchanged. Hooks inst
 ## Uninstalling
 
 ```bash
-ai-defender integrations uninstall claude   # removes only AI Defender's hooks (passphrase); other settings stay
-ai-defender integrations uninstall codex
-npm uninstall -g ai-defender
+ai-defender uninstall          # asks for your AI Defender password
+npm uninstall -g ai-defender   # the last step it prints
 ```
 
-Uninstalling the npm package does **not** delete your signing keys, policy, project registry or
-history. They stay in:
-- `~/.config/agentguard/`: trusted state, keys, audit log, approvals;
-- `.agentguard/` in each project.
+`ai-defender uninstall` is the supported way to remove AI Defender. After checking your password
+it removes AI Defender's hooks from Claude Code and Codex (your other settings and hooks are kept,
+with a backup) and its verified engine copies. Nothing is enforced after that. It keeps:
+- `~/.config/agentguard/`: signing keys, trusted policy, project registry, audit history and
+  hook backups (add `--purge` and type `purge` to delete these too);
+- `.agentguard/` in each project (it lives in your repositories; delete it yourself).
 
-Delete them yourself only if you no longer need them.
+**What the password does and does not protect.** It stops an AI agent, or anyone without the
+password, from switching AI Defender off through AI Defender. It cannot stop the owner of the
+machine:
+- `npm uninstall -g ai-defender` removes the command without asking. npm runs no script AI
+  Defender could rely on, and AI Defender does not try to interfere with npm. The hooks stay
+  installed and keep blocking until you remove them, either by reinstalling and running
+  `ai-defender uninstall`, or by deleting AI Defender's entries from `~/.claude/settings.json`
+  and `~/.codex/hooks.json`.
+- Anyone who can edit those files, or delete `~/.config/agentguard`, can remove AI Defender.
+  Agents are blocked from both by AI Defender's own guard, but other software on your account is
+  not.
+
+After five wrong passwords in a row, each further attempt waits: 30 seconds, doubling up to 15
+minutes. A correct password resets the count. This slows guessing through AI Defender; the
+signing keys themselves are protected by Argon2id encryption.
 
 ## Platform compatibility
 
 | Platform | Status |
 |---|---|
-| Linux x64 | Supported; tested end to end. Release binaries are static musl builds with no glibc requirement |
-| Linux arm64 | Built by the release workflow; not yet tested on hardware |
-| macOS x64 / arm64 | Built and unit-tested by the release workflow; end-to-end behaviour not yet validated |
-| Windows | **Not supported** (the engine relies on Unix file ownership and permissions); npm refuses to install |
+| Linux x64 | Supported. Static musl engine (no glibc requirement); full test suite and global-install test on GitHub's Ubuntu runner |
+| Linux arm64 | Supported. Static musl engine; full test suite and global-install test on GitHub's Ubuntu ARM64 runner |
+| macOS arm64 (Apple Silicon) | Supported. Full test suite and global-install test on GitHub's macOS 14 runner |
+| macOS x64 (Intel) | Supported. Full test suite and global-install test on GitHub's macOS 15 Intel runner |
+| Windows | **Not supported yet**; npm refuses to install. The platform layer exists, but Windows path rules (case-insensitive names, trailing dots, alternate data streams, short names) must be enforced before an engine is released |
 
 Storage uses `~/.config/agentguard` on every supported platform (or `$XDG_CONFIG_HOME`).
 

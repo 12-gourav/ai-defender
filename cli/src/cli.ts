@@ -13,6 +13,7 @@ import { check } from "./commands/check.js";
 import { dashboard } from "./commands/dashboard.js";
 import { history } from "./commands/history.js";
 import { doctor, repair, update } from "./commands/maintenance.js";
+import { uninstall } from "./commands/uninstall.js";
 import { projects } from "./commands/projects.js";
 import { execution, git, run as runCommand } from "./commands/execution.js";
 import { help } from "./commands/help.js";
@@ -47,6 +48,7 @@ export interface Flags {
   blocked: boolean;
   approvals: boolean;
   limit: string | undefined;
+  purge: boolean;
 }
 
 export interface Io {
@@ -227,6 +229,7 @@ function parseFlags(argv: string[]): { flags: Flags; positionals: string[]; help
         blocked: { type: "boolean" },
         approvals: { type: "boolean" },
         limit: { type: "string" },
+        purge: { type: "boolean" },
       },
     });
   } catch (e) {
@@ -250,6 +253,7 @@ function parseFlags(argv: string[]): { flags: Flags; positionals: string[]; help
       blocked: v.blocked === true,
       approvals: v.approvals === true,
       limit: v.limit,
+      purge: v.purge === true,
     },
     positionals: parsed.positionals,
     help: v.help === true,
@@ -273,6 +277,7 @@ const COMMANDS: Record<string, Handler> = {
   projects: (ctx, args) => projects(ctx, args),
   repair: (ctx, args) => repair(ctx, args),
   update: (ctx, args) => update(ctx, args),
+  uninstall: (ctx, args) => uninstall(ctx, args),
   execution: (ctx, args) => execution(ctx, args),
   git: (ctx, args) => git(ctx, args),
   run: (ctx, args) => runCommand(ctx, args),

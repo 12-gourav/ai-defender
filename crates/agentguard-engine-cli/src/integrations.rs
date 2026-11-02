@@ -581,7 +581,7 @@ pub fn uninstall_command(env: &Environment, arguments: Value) -> Result<Value, E
     crate::support::requester(&a.requested_by)?;
     let phrase = passphrase(a.passphrase, a.passphrase_file)?;
     verified(&env.store)?;
-    unlock(&env.store, SigningRole::Policy, &phrase)?;
+    unlock(&env.store, SigningRole::Policy, &phrase, env.clock.now())?;
     let path = config_path(p, &env.process_env)
         .map_err(|e| EngineError::new(ErrorCode::InvalidConfiguration, e.0))?;
     let change = install::uninstall(p, &path, &records_dir(env).join("backups"))
@@ -593,6 +593,141 @@ pub fn uninstall_command(env: &Environment, arguments: Value) -> Result<Value, E
         "changed": change.changed,
         "handlers_removed": change.removed,
         "backup": change.backup,
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SystemUninstallArgs {
+    confirm: bool,
+    requested_by: String,
+    #[serde(default)]
+    passphrase: Option<String>,
+    #[serde(default)]
+    passphrase_file: Option<String>,
+    /// Also delete the trust store (signing keys, policy, registry, audit history).
+    #[serde(default)]
+    purge: bool,
+    /// Must be exactly "purge" when `purge` is set.
+    #[serde(default)]
+    purge_confirmation: Option<String>,
+}
+
+/// `system.uninstall`: remove everything AI Defender installed outside its npm package: every
+/// agent integration (other hooks and settings are kept, with a backup) and the verified engine
+/// copies. The trust store is kept unless `purge` is set with its own confirmation.
+///
+/// When signing keys exist the passphrase is required, whether or not the rest of the trust
+/// store verifies: the owner must always be able to remove the product, and a damaged store
+/// must not turn into a way around the password. Without keys nothing is protected, so
+/// confirmation suffices. The npm package itself is removed by the CLI afterwards.
+pub fn system_uninstall(env: &Environment, arguments: Value) -> Result<Value, EngineError> {
+    not_for_agents(env, "uninstalling AI Defender")?;
+    let a: SystemUninstallArgs = args(arguments)?;
+    require_confirmation(a.confirm, "uninstalling AI Defender")?;
+    crate::support::requester(&a.requested_by)?;
+    if a.purge && a.purge_confirmation.as_deref() != Some("purge") {
+        return Err(EngineError::new(
+            ErrorCode::ConfirmationRequired,
+            "deleting the trust store needs purge_confirmation \"purge\"",
+        )
+        .recovery("type purge when asked, or pass --purge --yes deliberately"));
+    }
+    let root = env.store.root().to_path_buf();
+    let protected = env.store.signing_key_path(SigningRole::Policy).exists();
+    if protected {
+        let phrase = passphrase(a.passphrase, a.passphrase_file)?;
+        unlock(&env.store, SigningRole::Policy, &phrase, env.clock.now())?;
+    }
+    let mut integrations = Vec::new();
+    let mut failed = false;
+    for p in Provider::ALL {
+        let outcome = config_path(p, &env.process_env)
+            .map_err(|e| e.0)
+            .and_then(|path| {
+                install::uninstall(p, &path, &records_dir(env).join("backups"))
+                    .map(|change| (path, change))
+                    .map_err(|e| e.0)
+            });
+        match outcome {
+            Ok((path, change)) => {
+                let _ = fs::remove_file(record_path(env, p));
+                integrations.push(json!({
+                    "provider": p,
+                    "config_path": path,
+                    "handlers_removed": change.removed,
+                    "backup": change.backup,
+                }));
+            }
+            Err(error) => {
+                failed = true;
+                integrations.push(json!({ "provider": p, "error": error }));
+            }
+        }
+    }
+    if failed {
+        return Err(EngineError::new(
+            ErrorCode::InvalidConfiguration,
+            format!(
+                "some agent integrations could not be removed; nothing else was changed: {}",
+                Value::Array(integrations)
+            ),
+        )
+        .recovery("fix the reported configuration file, then run the uninstall again"));
+    }
+    let engines = root.join("engine");
+    let engines_removed = match fs::remove_dir_all(&engines) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => {
+            return Err(EngineError::new(
+                ErrorCode::IoError,
+                format!(
+                    "the engine copies in {} could not be removed",
+                    engines.display()
+                ),
+            ))
+        }
+    };
+    let projects: Vec<String> = verified(&env.store)
+        .map(|t| {
+            t.registry
+                .projects
+                .iter()
+                .map(|p| p.root.as_path().join(".agentguard").display().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut purged = false;
+    if a.purge {
+        let named_for_us = root.file_name().is_some_and(|n| n == "agentguard");
+        if !named_for_us || root.parent().is_none() {
+            return Err(EngineError::new(
+                ErrorCode::InvalidConfiguration,
+                format!(
+                    "refusing to delete {}: not an AI Defender trust store",
+                    root.display()
+                ),
+            ));
+        }
+        match fs::remove_dir_all(&root) {
+            Ok(()) => purged = true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => {
+                return Err(EngineError::new(
+                    ErrorCode::IoError,
+                    format!("the trust store {} could not be deleted", root.display()),
+                ))
+            }
+        }
+    }
+    Ok(json!({
+        "integrations": integrations,
+        "engine_copies_removed": engines_removed,
+        "password_verified": protected,
+        "trust_store": root,
+        "trust_store_deleted": purged,
+        "project_configurations": projects,
     }))
 }
 

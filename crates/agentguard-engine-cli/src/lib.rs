@@ -188,6 +188,7 @@ fn dispatch(env: &Environment, command: &str, arguments: Value) -> Result<Value,
         "integrations.install" => integrations::install_command(env, arguments),
         "integrations.uninstall" => integrations::uninstall_command(env, arguments),
         "integrations.repair" => integrations::repair_command(env, arguments),
+        "system.uninstall" => integrations::system_uninstall(env, arguments),
         "history.list" => activity::list(env, arguments),
         "prerequisites" => activity::prerequisites(env, arguments),
         _ => Err(EngineError::new(
