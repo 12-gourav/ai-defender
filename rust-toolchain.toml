@@ -1,0 +1,6 @@
+# Pinned so every developer and CI job compiles with the same compiler. Upgrades are reviewed:
+# see docs/DEVELOPMENT.md ("Toolchain upgrades").
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

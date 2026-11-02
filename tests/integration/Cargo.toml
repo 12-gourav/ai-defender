@@ -1,0 +1,30 @@
+[package]
+name = "agentguard-integration-tests"
+description = "Cross-crate integration tests for AgentGuard (no binary of its own)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+agentguard-core = { workspace = true }
+agentguard-common = { workspace = true }
+agentguard-audit = { workspace = true }
+agentguard-proto = { workspace = true }
+agentguard-engine = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+fastrand = { workspace = true }
+tempfile = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

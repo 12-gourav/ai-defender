@@ -1,0 +1,10 @@
+{
+  "schema": "agentguard.release-keys.v1",
+  "comment": "Public Ed25519 keys that sign engine release manifests. No release key has been provisioned yet, so release verification fails closed until one is added here by the release owner. Private keys are never stored in this repository or package.",
+  "keys": [
+    {
+      "publicKey": "5d45baced155de0561912e0c7cd7fd66df877edbd6fb4122b7cb59968920d47e",
+      "label": "release 2026"
+    }
+  ]
+}

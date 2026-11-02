@@ -1,0 +1,37 @@
+[package]
+name = "agentguard-engine-cli"
+description = "The `agentguard-engine` binary: the Rust security engine behind the npm CLI, speaking a versioned JSON request/response protocol over standard input and output."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "agentguard-engine"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+agentguard-core = { workspace = true }
+agentguard-common = { workspace = true }
+agentguard-audit = { workspace = true }
+agentguard-engine = { workspace = true }
+agentguard-proto = { workspace = true }
+agentguard-trust = { workspace = true }
+agentguard-secrets = { workspace = true }
+agentguard-exec = { workspace = true }
+agentguard-hooks = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+nix = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+

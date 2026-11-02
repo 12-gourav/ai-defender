@@ -1,0 +1,28 @@
+/target
+**/*.rs.bk
+*.pdb
+# Local state never belongs in the repository
+/.agentguard-local/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+# Editor
+.idea/
+.vscode/
+*.swp
+# Node
+node_modules/
+cli/build/
+*.tgz
+# Copies made by `npm run sync-docs` / `npm pack` (the sources are the repository root files)
+cli/README.md
+cli/SECURITY.md
+cli/LICENSE
+# Engines staged for packing (built by CI, signed by the release owner)
+cli/binaries/
+# Release artefacts and keys never belong in the repository
+/dist/
+*.pem
+*.key
+.env
+.env.*

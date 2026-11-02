@@ -1,0 +1,7 @@
+# Keep decision paths small enough to review.
+too-many-lines-threshold = 150
+cognitive-complexity-threshold = 25
+# Disallow APIs that would bypass the constructed-environment and no-shell rules in later phases.
+disallowed-methods = [
+    { path = "std::process::Command::new", reason = "Phase 1 never executes host processes; later phases go through the execution gateway." },
+]

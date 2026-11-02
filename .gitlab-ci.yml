@@ -1,0 +1,50 @@
+# AgentGuard GitLab CI. Mirrors .github/workflows/ci.yml. No job commits, pushes, merges or deploys.
+stages:
+  - lint
+  - test
+  - audit
+
+default:
+  image: rust:1-bookworm
+  cache:
+    key: cargo-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cargo/registry
+      - target/
+  before_script:
+    - export CARGO_HOME="$CI_PROJECT_DIR/.cargo"
+    - rustup component add rustfmt clippy
+    - rustc --version && cargo --version
+
+variables:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+fmt:
+  stage: lint
+  script:
+    - cargo fmt --all -- --check
+
+clippy:
+  stage: lint
+  script:
+    - cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+test:
+  stage: test
+  script:
+    - cargo check --workspace --all-targets --all-features --locked
+    - cargo test --workspace --all-features --locked
+    - cargo build --workspace --all-features --locked
+
+deny:
+  stage: audit
+  script:
+    - cargo install cargo-deny --locked
+    - cargo deny check --all-features
+
+rustsec:
+  stage: audit
+  script:
+    - cargo install cargo-audit --locked
+    - cargo audit

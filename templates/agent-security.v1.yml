@@ -1,0 +1,80 @@
+# AgentGuard project policy (format version 1).
+#
+# This file is an INPUT to AgentGuard, not the security boundary. The trusted controller
+# validates it, merges it under organisation policy, pins a snapshot for each session, and
+# enforces the result from outside the agent's sandbox. An agent editing this file changes
+# nothing for its running session; the change is surfaced for privileged human approval.
+#
+# Never put secrets in this file. Its contents appear in `agentguard inspect` output.
+#
+# Phase 1 validates the top-level structure only. Section contents are checked from Phase 2.
+
+version: 1
+
+# READ_ONLY | DEVELOPMENT | DEVELOPER_AUTHORIZED | RESTRICTED
+mode: DEVELOPMENT
+
+# Optional named profile from the organisation's policy set.
+# profile: default
+
+filesystem:
+  workspace: .
+  protected:
+    - .agent-security.yml
+    - .github/**
+    - .gitlab-ci.yml
+    - infra/**
+    - deploy/**
+  deny:
+    - .env
+    - .env.*
+    - "**/*.pem"
+    - "**/id_*"
+
+git:
+  remotes: [origin]
+  protected_branches: [main, master, "release/*"]
+  push:
+    feature_branches: approval
+    protected_branches: deny
+    force: deny
+  commit: approval
+  merge: approval
+
+network:
+  deny_private_ranges: true
+  deny_metadata: true
+  allow: []
+
+dependencies:
+  install: approval
+
+databases:
+  production: deny
+
+deployment:
+  default: deny
+
+approvals:
+  pending_timeout_seconds: 600
+  token_validity_seconds: 60
+  high_risk_typed_confirmation: true
+
+audit:
+  retention_days: 90
+
+# Project restrictions (optional). These are a PROPOSAL: they take effect only after a human
+# approves them into AgentGuard's signed trust store. Only DENY and REQUIRE_APPROVAL are
+# accepted here; a project cannot grant permissions. Editing this file later changes nothing
+# until the change is approved again.
+# rules:
+#   - id: src-needs-review
+#     decision: REQUIRE_APPROVAL
+#     reason: changes under src/ need a human look
+#     match:
+#       category: filesystem
+#       resource: "src/**"
+#       conditions:
+#         - capability: write
+# See docs/POLICY_EVALUATION.md for the full rule schema.
+

@@ -1,0 +1,27 @@
+[package]
+name = "agentguard-engine"
+description = "Deterministic authorization engine: identity verification, risk classification, trusted-state guards, policy evaluation, approval binding and fail-closed decisions."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+agentguard-core = { workspace = true }
+agentguard-proto = { workspace = true }
+agentguard-audit = { workspace = true }
+agentguard-secrets = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+fastrand = { workspace = true }
+tempfile = { workspace = true }

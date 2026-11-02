@@ -1,0 +1,64 @@
+{
+  "name": "ai-defender",
+  "version": "0.2.0",
+  "description": "A Rust-powered security governance layer for AI coding agents.",
+  "keywords": [
+    "ai",
+    "ai-agents",
+    "security",
+    "claude-code",
+    "codex",
+    "coding-agent",
+    "guardrails",
+    "policy",
+    "approval",
+    "secrets",
+    "devsecops",
+    "cli",
+    "rust"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/12-gourav/ai-defender.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/12-gourav/ai-defender#readme",
+  "bugs": {
+    "url": "https://github.com/12-gourav/ai-defender/issues"
+  },
+  "type": "module",
+  "bin": {
+    "ai-defender": "build/src/index.js",
+    "agentguard": "build/src/index.js"
+  },
+  "files": [
+    "build/src",
+    "binaries",
+    "release-keys.json",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit && node scripts/lint.mjs",
+    "test": "npm run build && node --test --test-reporter=spec \"build/test/**/*.test.js\"",
+    "sync-docs": "node scripts/sync-docs.mjs",
+    "prepack": "node scripts/sync-docs.mjs && npm run build",
+    "pack:check": "npm run sync-docs && npm run build && node scripts/check-package.mjs",
+    "e2e:install": "node scripts/e2e-global-install.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.3"
+  }
+}

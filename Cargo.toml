@@ -1,0 +1,141 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/agentguard-cli",
+    "crates/agentguard-core",
+    "crates/agentguard-common",
+    "crates/agentguard-audit",
+    "crates/agentguard-proto",
+    "crates/agentguard-engine",
+    "crates/agentguard-trust",
+    "crates/agentguard-engine-cli",
+    "crates/agentguard-secrets",
+    "crates/agentguard-exec",
+    "crates/agentguard-hooks",
+    "tests/integration",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.99"
+license = "Apache-2.0"
+repository = "https://github.com/12-gourav/ai-defender"
+authors = ["AgentGuard contributors"]
+publish = false
+
+[workspace.dependencies]
+# Internal crates
+agentguard-core = { path = "crates/agentguard-core" }
+agentguard-common = { path = "crates/agentguard-common" }
+agentguard-audit = { path = "crates/agentguard-audit" }
+agentguard-cli = { path = "crates/agentguard-cli" }
+agentguard-proto = { path = "crates/agentguard-proto" }
+agentguard-engine = { path = "crates/agentguard-engine" }
+agentguard-trust = { path = "crates/agentguard-trust" }
+agentguard-engine-cli = { path = "crates/agentguard-engine-cli" }
+agentguard-secrets = { path = "crates/agentguard-secrets" }
+agentguard-exec = { path = "crates/agentguard-exec" }
+agentguard-hooks = { path = "crates/agentguard-hooks" }
+
+# CLI and serialisation
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Errors
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "registry", "std"] }
+
+# Identity, time, hashing, secrets
+uuid = { version = "1", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["formatting", "parsing", "serde-well-known", "macros"] }
+sha2 = "0.10"
+hex = "0.4"
+zeroize = "1"
+# Ed25519 signatures (RFC 8032). Default features: std, fast, zeroize; no key generation RNG,
+# which comes from getrandom (already in the tree through uuid).
+ed25519-dalek = "2.2"
+getrandom = "0.4"
+# Passphrase-protected signing key files: Argon2id key derivation and XChaCha20-Poly1305.
+# Default features off: randomness comes from getrandom directly.
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+
+# Secret detection patterns. Linear-time matching (no backtracking), so configured patterns
+# cannot cause catastrophic matching; already in the lock file.
+regex = "1.13"
+
+# Unix helpers (safe wrappers; no raw libc in workspace code)
+nix = { version = "0.29", features = ["user", "fs"] }
+
+# Test-only
+tempfile = "3"
+assert_cmd = "2"
+predicates = "3"
+# Seeded generators for property tests (already in the lock file through tempfile).
+fastrand = "2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "warn"
+print_stderr = "warn"
+# Pedantic lints that fight readability in this codebase
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+doc_markdown = "allow"
+
+# Key derivation is deliberately expensive; unoptimised it makes debug builds and tests slow
+# without making them any more faithful. Optimise just these crates in dev and test profiles.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
+# Secret scanning runs every built-in pattern on every line; unoptimised regex makes debug
+# builds and tests an order of magnitude slower without making them more faithful.
+[profile.dev.package.regex]
+opt-level = 3
+
+[profile.dev.package.regex-automata]
+opt-level = 3
+
+[profile.dev.package.regex-syntax]
+opt-level = 3
+
+[profile.dev.package.aho-corasick]
+opt-level = 3
+
+[profile.dev.package.memchr]
+opt-level = 3
+
+# Engine binaries and hook executables are hashed on integration status checks.
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"
+panic = "abort"

@@ -1,0 +1,25 @@
+[package]
+name = "agentguard-core"
+description = "Foundational domain types for AgentGuard: identities, policy versions, decisions, risk, approval scopes and redaction primitives. No I/O."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+agentguard-secrets = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+fastrand = { workspace = true }

@@ -1,0 +1,31 @@
+[package]
+name = "agentguard-exec"
+description = "Managed execution for AgentGuard: policy-gated, approval-bound, environment-isolated process execution with structured Git and shell handling."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+agentguard-core = { workspace = true }
+agentguard-engine = { workspace = true }
+agentguard-proto = { workspace = true }
+agentguard-secrets = { workspace = true }
+agentguard-audit = { workspace = true }
+agentguard-trust = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+nix = { workspace = true, features = ["signal", "process", "poll", "resource"] }
+
+[dev-dependencies]
+fastrand = { workspace = true }
+tempfile = { workspace = true }

@@ -1,0 +1,31 @@
+[package]
+name = "agentguard-hooks"
+description = "AgentGuard adapters for official AI-agent hook systems (Claude Code, OpenAI Codex): payload validation, normalization into AgentGuard requests, provider responses, and hook configuration management."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+agentguard-core = { workspace = true }
+agentguard-engine = { workspace = true }
+agentguard-proto = { workspace = true }
+agentguard-secrets = { workspace = true }
+agentguard-audit = { workspace = true }
+agentguard-trust = { workspace = true }
+agentguard-exec = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+nix = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
