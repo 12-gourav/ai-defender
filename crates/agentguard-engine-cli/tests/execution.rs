@@ -900,6 +900,39 @@ fn git_inspection_redacts_remote_credentials() {
     let _ = &w.remote;
 }
 
+#[test]
+fn status_never_runs_a_filter_the_repository_configures() {
+    let Some(w) = world() else { return };
+    let marker = w.home.join("filter-ran");
+    let command = format!("touch {}", marker.display());
+    assert!(w.git(&["config", "filter.evil.clean", &command]));
+    assert!(w.git(&["config", "filter.evil.smudge", &command]));
+    fs::write(w.project.join(".gitattributes"), "* filter=evil\n").unwrap();
+    fs::write(w.project.join("touched.txt"), "changed\n").unwrap();
+    let s = call(
+        &w.human,
+        "git.status",
+        json!({ "working_directory": w.dir() }),
+    );
+    assert!(ok(&s), "{s}");
+    assert!(s["data"]["status"].is_null(), "{s}");
+    assert!(s["data"]["status_skipped"].is_string(), "{s}");
+    let i = call(
+        &w.human,
+        "git.inspect",
+        json!({ "working_directory": w.dir() }),
+    );
+    assert!(ok(&i), "{i}");
+    assert_eq!(i["data"]["repository"]["repository_filters"], true, "{i}");
+    let commit = w.run(&["git", "commit", "-m", "x"]);
+    assert_eq!(outcome(&commit), "refused", "{commit}");
+    assert_eq!(
+        commit["data"]["refusal"]["code"],
+        "execution.repository-filters"
+    );
+    assert!(!marker.exists(), "a repository filter ran");
+}
+
 /// The engine binary forwards nothing it should not: run the real process once.
 #[test]
 fn the_engine_process_runs_a_managed_command() {

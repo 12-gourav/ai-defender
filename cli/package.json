@@ -42,16 +42,18 @@
     "node": ">=18.17"
   },
   "os": [
-    "linux"
+    "linux",
+    "darwin"
   ],
   "cpu": [
-    "x64"
+    "x64",
+    "arm64"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit && node scripts/lint.mjs",
-    "test": "npm run build && node --test --test-reporter=spec \"build/test/**/*.test.js\"",
+    "test": "npm run build && node scripts/run-tests.mjs",
     "sync-docs": "node scripts/sync-docs.mjs",
     "prepack": "node scripts/sync-docs.mjs && npm run build",
     "pack:check": "npm run sync-docs && npm run build && node scripts/check-package.mjs",

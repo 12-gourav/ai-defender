@@ -4,7 +4,11 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+ignore = [
+    # unsafe-libyaml (via serde_yaml) is archived. It parses project and policy YAML, which is
+    # size-limited before parsing. Replacing the YAML stack is tracked in docs/KNOWN_LIMITATIONS.md.
+    { id = "RUSTSEC-2024-0449", reason = "serde_yaml backend archived; replacement tracked in KNOWN_LIMITATIONS" },
+]
 
 [licenses]
 version = 2
@@ -27,9 +31,11 @@ confidence-threshold = 0.9
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace crates depend on each other by path and are never published.
+allow-wildcard-paths = true
 deny = [
     # No raw libc calls outside vetted wrappers.
-    { crate = "libc", wrappers = ["nix", "rustix", "getrandom", "time", "tempfile", "errno", "mio", "socket2", "sha2", "cpufeatures", "uuid", "libredox", "io-lifetimes", "linux-raw-sys"] },
+    { crate = "libc", wrappers = ["nix", "rustix", "getrandom", "time", "tempfile", "errno", "mio", "socket2", "sha2", "cpufeatures", "uuid", "libredox", "io-lifetimes", "linux-raw-sys", "wait-timeout"] },
 ]
 
 [sources]

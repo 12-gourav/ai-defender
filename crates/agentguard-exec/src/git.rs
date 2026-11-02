@@ -524,6 +524,27 @@ impl Plumbing {
     }
 }
 
+/// Whether computing status could run a content filter the repository itself configures.
+///
+/// `listing` is `git config --list --show-scope --name-only`. Filters in system or global
+/// configuration are the user's own (Git LFS, for example); those in repository scopes (local,
+/// worktree, command) can be planted by anyone who can write `.git/config`. No listing (a Git
+/// without `--show-scope`, or any failure) counts as a repository filter.
+fn repository_filters(listing: Option<&str>) -> bool {
+    let Some(listing) = listing else {
+        return true;
+    };
+    listing.lines().any(|line| {
+        let (scope, name) = line.split_once('\t').unwrap_or(("unknown", line));
+        let name = name.to_ascii_lowercase();
+        let is_filter = name.starts_with("filter.")
+            && [".clean", ".smudge", ".process"]
+                .iter()
+                .any(|end| name.ends_with(end));
+        is_filter && !matches!(scope, "system" | "global")
+    })
+}
+
 /// A configured remote, credentials removed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Remote {
@@ -568,8 +589,11 @@ pub struct GitContext {
     pub branch: Option<String>,
     /// HEAD commit (`None` in an empty repository).
     pub head: Option<String>,
-    /// Tree of the staged index (`None` with unresolved conflicts).
+    /// Tree of the staged index (`None` with unresolved conflicts, or with repository filters).
     pub staged_tree: Option<String>,
+    /// The repository's own configuration defines content filters, so nothing that reads the
+    /// working tree is run and commits cannot be bound to their content.
+    pub repository_filters: bool,
     /// Staged changes, at most [`MAX_LISTED`].
     pub staged: Vec<Entry>,
     /// Total staged changes.
@@ -680,9 +704,18 @@ impl GitContext {
             roots
         ));
         let branch = p.output(&["symbolic-ref", "--quiet", "--short", "HEAD"]);
-        let staged_tree = p
-            .output(&["write-tree"])
-            .filter(|s| s.bytes().all(|b| b.is_ascii_hexdigit()) && s.len() >= 40);
+        // Checked before anything that reads the working tree: `write-tree` re-hashes racily
+        // clean files, and that runs their clean filter.
+        let repository_filters = repository_filters(
+            p.output(&["config", "--list", "--show-scope", "--name-only"])
+                .as_deref(),
+        );
+        let staged_tree = if repository_filters {
+            None
+        } else {
+            p.output(&["write-tree"])
+                .filter(|s| s.bytes().all(|b| b.is_ascii_hexdigit()) && s.len() >= 40)
+        };
         let (staged, staged_total) = p
             .run_limited(
                 &[
@@ -715,17 +748,9 @@ impl GitContext {
                 }
             })
             .collect();
-        let filters = p
-            .output(&[
-                "config",
-                "--name-only",
-                "--get-regexp",
-                r"^filter\..*\.(clean|smudge|process)$",
-            ])
-            .is_some_and(|s| !s.is_empty());
         let (status, status_skipped) = if !with_status {
             (None, None)
-        } else if filters {
+        } else if repository_filters {
             (
                 None,
                 Some("the repository configures content filters, which computing status could run"),
@@ -772,6 +797,7 @@ impl GitContext {
             branch,
             head,
             staged_tree,
+            repository_filters,
             staged,
             staged_total,
             remotes,
@@ -1013,6 +1039,23 @@ pub fn verify_push(p: &Plumbing, push: &PushSpec, ctx: &PushContext) -> Verifica
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_repository_scoped_filters_disable_status() {
+        assert!(!super::repository_filters(Some(
+            "system\tfilter.lfs.clean\nsystem\tfilter.lfs.process\nglobal\tfilter.x.smudge\nlocal\tcore.bare"
+        )));
+        assert!(super::repository_filters(Some("local\tfilter.evil.clean")));
+        assert!(super::repository_filters(Some(
+            "worktree\tFILTER.evil.Process"
+        )));
+        assert!(super::repository_filters(Some(
+            "command\tfilter.evil.smudge"
+        )));
+        assert!(super::repository_filters(Some("filter.unscoped.clean")));
+        assert!(super::repository_filters(None));
+        assert!(!super::repository_filters(Some("")));
+    }
+
     use super::*;
 
     fn p(cmd: &str) -> Result<GitCommand, Unsupported> {

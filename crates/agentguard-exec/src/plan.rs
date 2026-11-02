@@ -149,6 +149,12 @@ fn plan_git(
                 "the repository's working tree or Git directory lies outside the registered project, so its changes cannot be bound to this project",
             ));
         }
+        if command.kind == GitKind::Commit && ctx.repository_filters {
+            return Err(refuse(
+                "execution.repository-filters",
+                "the repository's own Git configuration defines content filters, which would run while the commit is prepared and prevent binding it to the staged content; move the filter to your global Git configuration or commit outside AI Defender",
+            ));
+        }
     }
     let mut push = None;
     let mut scan = None;

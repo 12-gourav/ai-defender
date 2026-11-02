@@ -168,4 +168,11 @@ See [HOOKS.md](HOOKS.md). Hooks are not complete AI-agent protection.
 | L108 | Installation rewrites the JSON file: content and unrelated entries are preserved exactly, but formatting and key order may change | No format-preserving JSON editor in the dependency tree | Backup kept; uninstall restores the same JSON value | accepted |
 | L109 | The health check runs synthetic hook calls inside the engine; it cannot prove that the provider actually invokes the hooks | Providers cannot be driven from AI Defender | Audit shows `hook-invoked` events once the provider runs them | accepted |
 | L110 | Each protected tool call adds about 16 ms (release build, Linux); calls needing Git inspection or approvals take about 120 ms or more | One process per call, signed-state verification, audit fsyncs | No daemon by design | accepted |
-| L111 | Windows is unsupported; macOS is untested | Platform scope | Linux tested end to end | open |
+| L111 | Windows is unsupported | Platform scope | Linux x64/arm64 and macOS x64/arm64 run the full Rust suite in CI; the release workflow runs the global-install test with each released engine | open: Windows port |
+
+## Production hardening (0.2.0, 2026-11-02)
+
+| # | Limitation | Why | Mitigation | Status |
+|---|---|---|---|---|
+| L112 | Project and policy YAML are parsed by `serde_yaml`, whose backend `unsafe-libyaml` is archived (RUSTSEC-2024-0449): a c2rust translation of libyaml that receives no fixes | No maintained drop-in replacement with identical YAML semantics was adopted in this release | Files are size-limited before parsing; the parsed values are schema-validated; the cargo-deny exception names this entry | open: replace the YAML stack |
+| L113 | When a repository's own Git configuration (local or worktree scope) defines content filters, AI Defender computes neither `git status` nor the staged tree, and refuses managed `git commit` there | Computing either can run the filter (Git re-hashes racily clean files), and a filter is an arbitrary command anyone who can write `.git/config` can plant | Filters in system or global configuration (Git LFS) are unaffected; the refusal names the cause | accepted |
