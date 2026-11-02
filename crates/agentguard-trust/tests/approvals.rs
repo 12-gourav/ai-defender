@@ -56,7 +56,7 @@ fn env() -> Env {
         base.path().join("trust"),
         AnchorConfig {
             system_anchor: None,
-            required_owner: 0,
+            required_owner: agentguard_trust::AnchorOwner::System,
         },
     );
     let (root_key, policy_key) = (key(1), key(2));
@@ -619,7 +619,7 @@ fn state_survives_restart_and_replay_is_still_refused() {
         e.trust.root().to_path_buf(),
         AnchorConfig {
             system_anchor: None,
-            required_owner: 0,
+            required_owner: agentguard_trust::AnchorOwner::System,
         },
     ));
     reopened

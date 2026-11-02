@@ -2,11 +2,10 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use nix::fcntl::{Flock, FlockArg, OFlag};
+use agentguard_platform::fs::{OpenNoFollow, UnixMode};
 
 use crate::chain::{append, verify, ChainedRecord};
 use crate::error::AuditError;
@@ -60,9 +59,10 @@ impl AuditSink for MemorySink {
 /// Largest single record line read back when continuing the chain.
 const MAX_RECORD_LINE: u64 = 64 * 1024;
 
-/// Append-only JSON Lines file, created with mode `0600`.
+/// Append-only JSON Lines file, created private (mode `0600` on Unix; the directory's ACL on
+/// Windows).
 ///
-/// Safe across processes: each append takes an exclusive `flock` on the file and continues
+/// Safe across processes: each append takes an exclusive lock on the file and continues
 /// from the record actually at the end of the file, so concurrent engine processes extend one
 /// chain instead of forking it.
 #[derive(Debug)]
@@ -94,7 +94,7 @@ impl JsonlSink {
         OpenOptions::new()
             .create(true)
             .append(true)
-            .mode(0o600)
+            .unix_mode(0o600)
             .open(path)
             .map_err(|e| io("open", e))?;
         verify(&Self::read_all(path)?)?;
@@ -175,23 +175,22 @@ impl JsonlSink {
 impl AuditSink for JsonlSink {
     fn record(&self, event: AuditEvent) -> Result<ChainedRecord, AuditError> {
         let _appending = self.appending.lock().map_err(|_| AuditError::Unavailable)?;
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .read(true)
             .append(true)
-            .mode(0o600)
-            .custom_flags(OFlag::O_NOFOLLOW.bits())
-            .open(&self.path)
+            .unix_mode(0o600)
+            .open_no_follow(&self.path)
             .map_err(|source| AuditError::Io {
                 path: self.path.clone(),
                 action: "open",
                 source,
             })?;
-        let mut file =
-            Flock::lock(file, FlockArg::LockExclusive).map_err(|(_, errno)| AuditError::Io {
-                path: self.path.clone(),
-                action: "lock",
-                source: std::io::Error::from(errno),
-            })?;
+        // Released when `file` is closed at the end of this call.
+        file.lock().map_err(|source| AuditError::Io {
+            path: self.path.clone(),
+            action: "lock",
+            source,
+        })?;
         let last = self.last_record(&mut file)?;
         let rec = append(last.as_ref(), event)?;
         let mut line = serde_json::to_string(&rec).map_err(AuditError::Serialise)?;
@@ -215,7 +214,6 @@ impl AuditSink for JsonlSink {
 mod tests {
     use super::*;
     use crate::event::AuditEventKind;
-    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn memory_sink_chains_and_verifies() {
@@ -245,8 +243,11 @@ mod tests {
             sink.record(AuditEvent::new(AuditEventKind::SessionEnded, "s", ""))
                 .unwrap();
         }
-        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600);
+        #[cfg(unix)]
+        assert_eq!(
+            agentguard_platform::fs::unix_mode(&fs::metadata(&path).unwrap()),
+            Some(0o600)
+        );
 
         let reopened = JsonlSink::open(&path).unwrap();
         let rec = reopened
@@ -338,6 +339,7 @@ mod tests {
         assert!(sink.verify().is_ok());
     }
 
+    #[cfg(unix)]
     #[test]
     fn jsonl_open_refuses_symlink() {
         let dir = tempfile::tempdir().unwrap();

@@ -12,6 +12,7 @@ members = [
     "crates/agentguard-secrets",
     "crates/agentguard-exec",
     "crates/agentguard-hooks",
+    "crates/agentguard-platform",
     "tests/integration",
 ]
 
@@ -37,6 +38,7 @@ agentguard-engine-cli = { path = "crates/agentguard-engine-cli" }
 agentguard-secrets = { path = "crates/agentguard-secrets" }
 agentguard-exec = { path = "crates/agentguard-exec" }
 agentguard-hooks = { path = "crates/agentguard-hooks" }
+agentguard-platform = { path = "crates/agentguard-platform" }
 
 # CLI and serialisation
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
@@ -73,6 +75,16 @@ regex = "1.13"
 
 # Unix helpers (safe wrappers; no raw libc in workspace code)
 nix = { version = "0.29", features = ["user", "fs"] }
+# Windows system calls, used only by agentguard-platform (already in the tree through clap).
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
 
 # Test-only
 tempfile = "3"

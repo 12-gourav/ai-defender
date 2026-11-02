@@ -16,6 +16,7 @@ agentguard-core = { workspace = true }
 agentguard-common = { workspace = true }
 agentguard-audit = { workspace = true }
 agentguard-engine = { workspace = true }
+agentguard-platform = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -24,7 +25,6 @@ time = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 zeroize = { workspace = true }
-nix = { workspace = true }
 ed25519-dalek = { workspace = true }
 getrandom = { workspace = true }
 argon2 = { workspace = true }
@@ -34,3 +34,6 @@ chacha20poly1305 = { workspace = true }
 agentguard-proto = { workspace = true }
 tempfile = { workspace = true }
 fastrand = { workspace = true }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true }

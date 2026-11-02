@@ -132,7 +132,7 @@ impl Environment {
                 root,
                 AnchorConfig {
                     system_anchor: None,
-                    required_owner: 0,
+                    required_owner: agentguard_trust::AnchorOwner::System,
                 },
             ),
             kdf,

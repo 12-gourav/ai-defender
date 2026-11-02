@@ -97,7 +97,7 @@ fn store_at(base: &Path, anchor: AnchorConfig) -> TrustStore {
 fn no_system_anchor() -> AnchorConfig {
     AnchorConfig {
         system_anchor: None,
-        required_owner: 0,
+        required_owner: agentguard_trust::AnchorOwner::System,
     }
 }
 
@@ -1010,10 +1010,9 @@ fn inv11_system_anchor_pins_the_root_key() {
         ))
         .unwrap(),
     );
-    let uid = nix::unistd::Uid::current().as_raw();
     let pinned = AnchorConfig {
         system_anchor: Some(anchor_path.clone()),
-        required_owner: uid,
+        required_owner: agentguard_trust::AnchorOwner::CurrentUser,
     };
     // A group-writable anchor is refused outright.
     fs::set_permissions(&anchor_path, fs::Permissions::from_mode(0o664)).unwrap();
@@ -1056,12 +1055,12 @@ fn inv11_system_anchor_pins_the_root_key() {
     .unwrap();
     assert!(store.load().is_ok());
     // An anchor not owned by the required owner (the administrator) is refused.
-    if uid != 0 {
+    if !nix::unistd::Uid::current().is_root() {
         let strict = store_at(
             &base.path().join("b"),
             AnchorConfig {
                 system_anchor: Some(anchor_path),
-                required_owner: 0,
+                required_owner: agentguard_trust::AnchorOwner::System,
             },
         );
         assert!(matches!(strict.load(), Err(TrustError::Insecure { .. })));

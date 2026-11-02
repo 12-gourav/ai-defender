@@ -112,7 +112,7 @@ pub fn registered_for<'a>(
 /// Whether a registration's directory is still the registered one.
 #[must_use]
 pub fn directory_matches(registration: &ProjectRegistration) -> bool {
-    DirectoryIdentity::observe(&registration.root).is_ok_and(|d| d == registration.directory)
+    DirectoryIdentity::observe(&registration.root).is_ok_and(|d| registration.directory.matches(&d))
 }
 
 /// The trust store's state.

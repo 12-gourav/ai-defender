@@ -183,12 +183,15 @@ mod tests {
         assert!(src.is_set("A").unwrap());
         assert!(!src.is_set("B").unwrap());
         assert!(!src.is_set("C").unwrap());
-        std::os::unix::fs::symlink(&p, dir.path().join("link.env")).unwrap();
-        assert_eq!(
-            DotenvFile::new(&dir.path().join("link.env"))
-                .describe()
-                .unwrap_err(),
-            AccessError::Unreadable
-        );
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&p, dir.path().join("link.env")).unwrap();
+            assert_eq!(
+                DotenvFile::new(&dir.path().join("link.env"))
+                    .describe()
+                    .unwrap_err(),
+                AccessError::Unreadable
+            );
+        }
     }
 }

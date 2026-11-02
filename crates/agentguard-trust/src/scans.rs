@@ -4,9 +4,9 @@
 //! Records hold findings as produced by `agentguard_secrets` (location, detector, severity,
 //! redacted preview) and scan statistics. They never hold a matched value or any hash of one.
 
+use agentguard_platform::fs::UnixMode;
 use std::fs::DirBuilder;
 use std::io::ErrorKind;
-use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -33,7 +33,7 @@ pub fn scan_record_path(store: &TrustStore, root: &Path) -> PathBuf {
 pub fn save_scan_record(store: &TrustStore, root: &Path, record: &Value) -> Result<(), TrustError> {
     check_dir(store.root(), "trust store")?;
     let dir = scans_dir(store);
-    match DirBuilder::new().mode(0o700).create(&dir) {
+    match DirBuilder::new().unix_mode(0o700).create(&dir) {
         Ok(()) => {}
         Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
         Err(_) => {

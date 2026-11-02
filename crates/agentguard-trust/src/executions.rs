@@ -13,12 +13,11 @@
 //! second time. Records are produced by the executor already redacted; this module stores them
 //! as given and never interprets their content beyond the fields used for ordering.
 
+use agentguard_platform::fs::{OpenNoFollow, UnixMode};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::PathBuf;
 
-use nix::fcntl::{Flock, FlockArg, OFlag};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -106,7 +105,7 @@ impl ExecutionStore {
     fn prepare(&self) -> Result<(), TrustError> {
         check_dir(&self.trust_root, "trust store")?;
         for dir in [self.root.clone(), self.records(), self.keys()] {
-            match DirBuilder::new().mode(0o700).create(&dir) {
+            match DirBuilder::new().unix_mode(0o700).create(&dir) {
                 Ok(()) => {}
                 Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
                 Err(_) => return Err(io("created")),
@@ -116,17 +115,18 @@ impl ExecutionStore {
         Ok(())
     }
 
-    fn lock(&self) -> Result<Flock<File>, TrustError> {
+    /// The store's exclusive lock, held until the returned file is closed.
+    fn lock(&self) -> Result<File, TrustError> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
-            .mode(0o600)
-            .custom_flags(OFlag::O_NOFOLLOW.bits())
-            .open(self.root.join("lock"))
+            .unix_mode(0o600)
+            .open_no_follow(self.root.join("lock"))
             .map_err(|_| io("locked"))?;
-        Flock::lock(file, FlockArg::LockExclusive).map_err(|_| io("locked"))
+        file.lock().map_err(|_| io("locked"))?;
+        Ok(file)
     }
 
     /// Reserve `key` for `execution_id`. Fails with [`ExecutionStoreError::Duplicate`] when the
@@ -143,9 +143,8 @@ impl ExecutionStore {
         match OpenOptions::new()
             .write(true)
             .create_new(true)
-            .mode(0o600)
-            .custom_flags(OFlag::O_NOFOLLOW.bits())
-            .open(&path)
+            .unix_mode(0o600)
+            .open_no_follow(&path)
         {
             Ok(mut file) => {
                 file.write_all(execution_id.as_bytes())
@@ -156,8 +155,7 @@ impl ExecutionStore {
                 let mut existing = String::new();
                 let _ = OpenOptions::new()
                     .read(true)
-                    .custom_flags(OFlag::O_NOFOLLOW.bits())
-                    .open(&path)
+                    .open_no_follow(&path)
                     .and_then(|f| f.take(64).read_to_string(&mut existing));
                 let existing = existing.trim();
                 return Err(ExecutionStoreError::Duplicate(
@@ -299,12 +297,12 @@ mod tests {
     fn store() -> (tempfile::TempDir, ExecutionStore) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("trust");
-        DirBuilder::new().mode(0o700).create(&root).unwrap();
+        DirBuilder::new().unix_mode(0o700).create(&root).unwrap();
         let trust = TrustStore::new(
             root,
             AnchorConfig {
                 system_anchor: None,
-                required_owner: 0,
+                required_owner: crate::AnchorOwner::System,
             },
         );
         (dir, ExecutionStore::new(&trust))

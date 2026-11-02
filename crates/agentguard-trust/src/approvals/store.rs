@@ -13,13 +13,12 @@
 //! step: two consumers cannot both observe an active grant. Transactions are short; no
 //! transaction is held while a human is reading or typing.
 
+use agentguard_platform::fs::{OpenNoFollow, UnixMode};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::ErrorKind;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::PathBuf;
 
 use agentguard_core::ApprovalId;
-use nix::fcntl::{Flock, FlockArg, OFlag};
 use serde::{Deserialize, Serialize};
 
 use crate::error::TrustError;
@@ -77,7 +76,7 @@ impl ApprovalStore {
     fn prepare(&self) -> Result<(), ApprovalError> {
         check_dir(&self.trust_root, "trust store").map_err(unavailable("opened"))?;
         for dir in [&self.root, &self.requests_dir()] {
-            match DirBuilder::new().mode(0o700).create(dir) {
+            match DirBuilder::new().unix_mode(0o700).create(dir) {
                 Ok(()) => {}
                 Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
                 Err(_) => return Err(ApprovalError::Unavailable("created")),
@@ -108,15 +107,14 @@ impl ApprovalStore {
             .write(true)
             .create(true)
             .truncate(false)
-            .mode(0o600)
-            .custom_flags(OFlag::O_NOFOLLOW.bits())
-            .open(self.root.join("lock"))
+            .unix_mode(0o600)
+            .open_no_follow(self.root.join("lock"))
             .map_err(|_| ApprovalError::Unavailable("locked"))?;
-        let lock = Flock::lock(file, FlockArg::LockExclusive)
+        file.lock()
             .map_err(|_| ApprovalError::Unavailable("locked"))?;
         Ok(Transaction {
             store: self,
-            _lock: lock,
+            _lock: file,
         })
     }
 }
@@ -135,7 +133,8 @@ fn migrate(found: u32) -> Result<(), ApprovalError> {
 /// An exclusive transaction over the store. Dropping it releases the lock.
 pub struct Transaction<'a> {
     store: &'a ApprovalStore,
-    _lock: Flock<File>,
+    /// Holds the exclusive lock until the transaction is dropped.
+    _lock: File,
 }
 
 impl Transaction<'_> {

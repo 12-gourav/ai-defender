@@ -284,7 +284,7 @@ impl Scanner<'_> {
                 self.skip(&rel_text, SkipReason::NotRegularFile);
                 return;
             }
-            Err(e) if e.raw_os_error() == Some(nix::libc::ELOOP) => {
+            Err(e) if agentguard_platform::fs::is_link_refusal(&e) => {
                 self.skip(&rel_text, SkipReason::Symlink);
                 return;
             }

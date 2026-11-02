@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { before, test } from "node:test";
@@ -54,7 +55,7 @@ async function operation(w: World, target: string): Promise<Record<string, unkno
   const version = JSON.parse(status.stdout).data.policy.version as string;
   return {
     protocol: "agentguard.authz.v1",
-    request_id: crypto.randomUUID(),
+    request_id: randomUUID(),
     agent: { kind: "claude" },
     project: { root: w.cwd },
     action: { category: "git", operation: "push", remote: "origin", target_ref: target },
@@ -120,9 +121,9 @@ test("interactive approval shows the exact operation and issues a one-time grant
   assert.match(prompter.asked[0] ?? "", /Type "approve"/);
   assert.match(prompter.asked[1] ?? "", /passphrase/i);
 
-  const used = await asAgent(w.box, "authorization.consume", { request: { ...request, request_id: crypto.randomUUID() }, approval_id: id, claim_token: token });
+  const used = await asAgent(w.box, "authorization.consume", { request: { ...request, request_id: randomUUID() }, approval_id: id, claim_token: token });
   assert.equal(used["success"], true, JSON.stringify(used));
-  const replay = await asAgent(w.box, "authorization.consume", { request: { ...request, request_id: crypto.randomUUID() }, approval_id: id, claim_token: token });
+  const replay = await asAgent(w.box, "authorization.consume", { request: { ...request, request_id: randomUUID() }, approval_id: id, claim_token: token });
   assert.equal(replay["success"], false);
   assert.match(JSON.stringify(replay), /approval\.replay/);
 

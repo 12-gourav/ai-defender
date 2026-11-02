@@ -19,7 +19,7 @@ thiserror = { workspace = true }
 time = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
-nix = { workspace = true }
+agentguard-platform = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

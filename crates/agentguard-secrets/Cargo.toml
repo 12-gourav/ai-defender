@@ -17,9 +17,12 @@ serde = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }
-nix = { workspace = true }
+agentguard-platform = { workspace = true }
 
 [dev-dependencies]
 fastrand = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true }

@@ -17,8 +17,8 @@ name = "agentguard-audit"
 version = "0.2.0"
 dependencies = [
  "agentguard-core",
+ "agentguard-platform",
  "hex",
- "nix",
  "serde",
  "serde_json",
  "sha2",
@@ -48,7 +48,7 @@ name = "agentguard-common"
 version = "0.2.0"
 dependencies = [
  "agentguard-core",
- "nix",
+ "agentguard-platform",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -173,6 +173,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentguard-platform"
+version = "0.2.0"
+dependencies = [
+ "nix",
+ "tempfile",
+ "windows-sys",
+]
+
+[[package]]
 name = "agentguard-proto"
 version = "0.2.0"
 dependencies = [
@@ -187,6 +196,7 @@ dependencies = [
 name = "agentguard-secrets"
 version = "0.2.0"
 dependencies = [
+ "agentguard-platform",
  "fastrand",
  "hex",
  "nix",
@@ -206,6 +216,7 @@ dependencies = [
  "agentguard-common",
  "agentguard-core",
  "agentguard-engine",
+ "agentguard-platform",
  "agentguard-proto",
  "argon2",
  "chacha20poly1305",

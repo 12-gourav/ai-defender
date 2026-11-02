@@ -13,10 +13,10 @@
 //! reported as drift and otherwise ignored. Only the global policy selects the security profile;
 //! a project's `profile` is an expectation that is checked, not applied.
 
+use agentguard_platform::fs::{OpenNoFollow, UnixMode};
 use std::collections::BTreeMap;
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{ErrorKind, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
 use agentguard_common::config::{self, ProjectConfig, POLICY_FILE_NAME};
@@ -350,7 +350,7 @@ pub fn write_initial_config(
     let dir = root.as_path().join(CONFIG_DIR);
     if !config_dir_state(root)? {
         DirBuilder::new()
-            .mode(0o755)
+            .unix_mode(0o755)
             .create(&dir)
             .map_err(|_| ProjectConfigError::Io {
                 path: CONFIG_DIR,
@@ -375,9 +375,8 @@ pub fn write_initial_config(
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(0o644)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(&path)
+        .unix_mode(0o644)
+        .open_no_follow(&path)
         .map_err(|e| {
             if e.kind() == ErrorKind::AlreadyExists {
                 ProjectConfigError::Exists
@@ -462,8 +461,9 @@ mod tests {
         assert!(parse_project_config("version: 1\nrules:\n  - id: x\n    decision: DENY\n    reason: r\n    match: { category: network }\n").is_ok());
     }
 
+    #[cfg(unix)]
     #[test]
-    fn symlinks_and_ambiguity_are_refused() {
+    fn symlinked_configuration_is_refused() {
         let (_d, r) = root();
         let elsewhere = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(elsewhere.path(), r.as_path().join(CONFIG_DIR)).unwrap();
@@ -476,7 +476,10 @@ mod tests {
             !elsewhere.path().join(CONFIG_FILE).exists(),
             "nothing written through the link"
         );
+    }
 
+    #[test]
+    fn ambiguous_configuration_is_refused() {
         let (_d2, r2) = root();
         fs::create_dir(r2.as_path().join(CONFIG_DIR)).unwrap();
         fs::write(

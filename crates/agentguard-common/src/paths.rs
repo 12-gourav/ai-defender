@@ -1,13 +1,16 @@
 //! Locations of controller-owned state, resolved from XDG variables.
 //!
 //! The state directory holds policy snapshots, audit records and session metadata. It is
-//! created with mode `0700`, must be owned by the current user, must not be readable by
-//! group or others, and must not live inside the project being guarded.
+//! created private (mode `0700` on Unix), must be owned by the current user, must not be
+//! accessible to other users, and must not live inside the project being guarded.
+//!
+//! On Windows, where `HOME` is usually unset, the home directory is `USERPROFILE`.
 
 use std::fs;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
+use agentguard_platform::access::{self, Owner};
+use agentguard_platform::fs::UnixMode;
 use serde::Serialize;
 
 /// Problems with controller-owned paths.
@@ -30,13 +33,13 @@ pub enum PathsError {
         source: std::io::Error,
     },
 
-    /// The directory exists but is readable by group or others.
-    #[error("{} is accessible by other users (mode {mode:o}); run: chmod 700 {}", path.display(), path.display())]
+    /// The directory exists but other users can access it.
+    #[error("{} is accessible by other users; restrict it to your account (Unix: chmod 700 {})", path.display(), path.display())]
     TooPermissive {
         /// The path.
         path: PathBuf,
-        /// Observed permission bits.
-        mode: u32,
+        /// Observed permission bits (Unix only).
+        mode: Option<u32>,
     },
 
     /// The directory is owned by a different user.
@@ -78,7 +81,7 @@ impl AppPaths {
     /// Resolve from the process environment.
     pub fn from_env() -> Result<Self, PathsError> {
         Self::resolve(
-            std::env::var_os("HOME").map(PathBuf::from),
+            home_from_env(),
             std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
             std::env::var_os("XDG_STATE_HOME").map(PathBuf::from),
             std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
@@ -122,7 +125,7 @@ impl AppPaths {
         if let Some(parent) = self.state_dir.parent() {
             fs::DirBuilder::new()
                 .recursive(true)
-                .mode(0o700)
+                .unix_mode(0o700)
                 .create(parent)
                 .map_err(|source| PathsError::Io {
                     action: "creating",
@@ -130,7 +133,10 @@ impl AppPaths {
                     source,
                 })?;
         }
-        match fs::DirBuilder::new().mode(0o700).create(&self.state_dir) {
+        match fs::DirBuilder::new()
+            .unix_mode(0o700)
+            .create(&self.state_dir)
+        {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(source) => {
@@ -158,7 +164,15 @@ impl AppPaths {
     }
 }
 
-/// Verify that `path` is a directory owned by the current user with no group or other bits.
+/// The home directory: `HOME`, or on Windows `USERPROFILE` when `HOME` is unset or empty.
+pub fn home_from_env() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").filter(|h| !h.is_empty());
+    #[cfg(windows)]
+    let home = home.or_else(|| std::env::var_os("USERPROFILE").filter(|h| !h.is_empty()));
+    home.map(PathBuf::from)
+}
+
+/// Verify that `path` is a directory owned by the current user that no other user can access.
 pub fn check_private_dir(path: &Path) -> Result<(), PathsError> {
     let meta = fs::metadata(path).map_err(|source| PathsError::Io {
         action: "inspecting",
@@ -170,15 +184,18 @@ pub fn check_private_dir(path: &Path) -> Result<(), PathsError> {
             path: path.to_path_buf(),
         });
     }
-    let mode = meta.permissions().mode() & 0o777;
-    if mode & 0o077 != 0 {
+    let observed = access::of(path, &meta).map_err(|source| PathsError::Io {
+        action: "inspecting the permissions of",
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if observed.others_have_access {
         return Err(PathsError::TooPermissive {
             path: path.to_path_buf(),
-            mode,
+            mode: agentguard_platform::fs::unix_mode(&meta).map(|m| m & 0o777),
         });
     }
-    let current_uid = nix::unistd::Uid::current().as_raw();
-    if meta.uid() != current_uid {
+    if observed.owner != Owner::CurrentUser {
         return Err(PathsError::WrongOwner {
             path: path.to_path_buf(),
         });
@@ -230,14 +247,19 @@ mod tests {
             runtime_dir: None,
         };
         let created = paths.ensure_state_dir(None).unwrap();
-        let mode = fs::metadata(&created).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o700);
-
-        fs::set_permissions(&created, fs::Permissions::from_mode(0o750)).unwrap();
-        assert!(matches!(
-            paths.ensure_state_dir(None),
-            Err(PathsError::TooPermissive { mode: 0o750, .. })
-        ));
+        #[cfg(unix)]
+        {
+            let mode = agentguard_platform::fs::unix_mode(&fs::metadata(&created).unwrap());
+            assert_eq!(mode, Some(0o700));
+            agentguard_platform::fs::set_unix_mode(&created, 0o750).unwrap();
+            assert!(matches!(
+                paths.ensure_state_dir(None),
+                Err(PathsError::TooPermissive {
+                    mode: Some(0o750),
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]

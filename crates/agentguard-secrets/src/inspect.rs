@@ -5,10 +5,9 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::Read;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
-use nix::fcntl::OFlag;
+use agentguard_platform::fs::OpenNoFollow;
 use serde::Serialize;
 
 use crate::detectors::DetectorSet;
@@ -62,12 +61,11 @@ pub fn inspect_text(text: &str, set: &DetectorSet) -> Inspection {
     }
 }
 
-/// Open a regular file without following a final symlink and without blocking on a FIFO.
+/// Open a regular file without following a final link and without blocking on a FIFO.
 pub fn open_regular(path: &Path) -> std::io::Result<File> {
     let file = OpenOptions::new()
         .read(true)
-        .custom_flags((OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK).bits())
-        .open(path)?;
+        .open_no_follow_nonblocking(path)?;
     if file.metadata()?.file_type().is_file() {
         Ok(file)
     } else {

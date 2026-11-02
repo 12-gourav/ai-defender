@@ -11,10 +11,10 @@
 //! an agent running as the same user) cannot sign anything. With it, it can: see the trust
 //! model's local-user limitations.
 
+use agentguard_platform::fs::{OpenNoFollow, UnixMode};
 use std::fmt;
 use std::fs::{DirBuilder, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::Path;
 
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -358,7 +358,7 @@ pub fn write_key_file(path: &Path, key: &EncryptedKey) -> Result<(), KeyFileErro
     if let Some(parent) = path.parent() {
         DirBuilder::new()
             .recursive(true)
-            .mode(0o700)
+            .unix_mode(0o700)
             .create(parent)
             .map_err(|_| io("created"))?;
     }
@@ -366,9 +366,8 @@ pub fn write_key_file(path: &Path, key: &EncryptedKey) -> Result<(), KeyFileErro
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(0o600)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(path)
+        .unix_mode(0o600)
+        .open_no_follow(path)
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::AlreadyExists {
                 KeyFileError::Exists
@@ -469,7 +468,6 @@ mod tests {
 
     #[test]
     fn files_are_private_and_never_overwritten() {
-        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("signing/policy.key");
         let (sealed, _) = generate_sealed_with(
@@ -480,9 +478,10 @@ mod tests {
         )
         .unwrap();
         write_key_file(&path, &sealed).unwrap();
+        #[cfg(unix)]
         assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
+            agentguard_platform::fs::unix_mode(&std::fs::metadata(&path).unwrap()),
+            Some(0o600)
         );
         assert_eq!(write_key_file(&path, &sealed), Err(KeyFileError::Exists));
         assert_eq!(read_key_file(&path).unwrap(), sealed);

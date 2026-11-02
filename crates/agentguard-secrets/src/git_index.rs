@@ -17,7 +17,6 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Read;
-use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
 /// Largest index read.
@@ -318,10 +317,12 @@ pub fn staged(root: &Path) -> Result<Staged, IndexError> {
         let matches = !symlink
             && e.stage == 0
             && fs::symlink_metadata(root.join(&e.path)).is_ok_and(|m| {
+                let mtime = agentguard_platform::identity::mtime_ns(&m);
                 m.is_file()
-                    && u32::try_from(m.size() & 0xffff_ffff).ok() == Some(e.size)
-                    && u32::try_from(m.mtime()).ok() == Some(e.mtime_s)
-                    && (e.mtime_ns == 0 || u32::try_from(m.mtime_nsec()).ok() == Some(e.mtime_ns))
+                    && u32::try_from(m.len() & 0xffff_ffff).ok() == Some(e.size)
+                    && u32::try_from(mtime.div_euclid(1_000_000_000)).ok() == Some(e.mtime_s)
+                    && (e.mtime_ns == 0
+                        || u32::try_from(mtime.rem_euclid(1_000_000_000)).ok() == Some(e.mtime_ns))
             });
         if matches {
             out.verified.push(e.path.clone());

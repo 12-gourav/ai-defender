@@ -146,6 +146,7 @@ fn excluded_files_are_reported_as_excluded_never_clean() {
     assert_eq!(r.excluded.len(), 1);
 }
 
+#[cfg(unix)]
 #[test]
 fn symlinks_are_never_followed_and_paths_cannot_escape() {
     let outside = tempfile::tempdir().unwrap();
@@ -208,6 +209,7 @@ fn binary_large_and_special_files_are_skipped_and_reported() {
         f.write_all(&[b'a'; 64 * 1024]).unwrap();
     }
     f.write_all(GITHUB.as_bytes()).unwrap();
+    #[cfg(unix)]
     nix::unistd::mkfifo(&p.path().join("pipe"), nix::sys::stat::Mode::S_IRWXU).unwrap();
     let mut options = ScanOptions::default();
     options.max_file_bytes = 1024 * 1024;
@@ -221,6 +223,7 @@ fn binary_large_and_special_files_are_skipped_and_reported() {
     };
     assert_eq!(reason("blob.bin"), Some(SkipReason::Binary));
     assert_eq!(reason("big.log"), Some(SkipReason::TooLarge));
+    #[cfg(unix)]
     assert_eq!(reason("pipe"), Some(SkipReason::NotRegularFile));
     assert!(!report.complete);
 }

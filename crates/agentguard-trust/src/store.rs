@@ -20,12 +20,13 @@
 use std::collections::BTreeMap;
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use agentguard_audit::JsonlSink;
 use agentguard_common::paths::AppPaths;
 use agentguard_core::{NormalizedPath, ProjectId};
+use agentguard_platform::access::{self, Owner};
+use agentguard_platform::fs::{OpenNoFollow, UnixMode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -51,20 +52,45 @@ const SUBDIRS: &[&str] = &[
     "audit",
 ];
 
+/// Who must own a system trust anchor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnchorOwner {
+    /// The system: root on Unix; SYSTEM, Administrators or TrustedInstaller on Windows.
+    System,
+    /// The current user (tests).
+    CurrentUser,
+}
+
+impl AnchorOwner {
+    fn accepts(self, owner: Owner) -> bool {
+        match self {
+            Self::System => owner == Owner::System,
+            Self::CurrentUser => owner == Owner::CurrentUser,
+        }
+    }
+}
+
 /// Where an administrator-provisioned root anchor may live, and who must own it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnchorConfig {
     /// Path of the system anchor. When the file exists, the user's root key must equal it.
     pub system_anchor: Option<PathBuf>,
-    /// Required owner of the system anchor (0, root, in production).
-    pub required_owner: u32,
+    /// Required owner of the system anchor ([`AnchorOwner::System`] in production).
+    pub required_owner: AnchorOwner,
 }
 
 impl Default for AnchorConfig {
+    /// `/etc/agentguard/root.json`; on Windows `%ProgramData%\agentguard\root.json`.
     fn default() -> Self {
+        #[cfg(unix)]
+        let system_anchor = Some(PathBuf::from("/etc/agentguard/root.json"));
+        #[cfg(windows)]
+        let system_anchor = std::env::var_os("ProgramData")
+            .filter(|p| !p.is_empty())
+            .map(|p| PathBuf::from(p).join("agentguard").join("root.json"));
         Self {
-            system_anchor: Some(PathBuf::from("/etc/agentguard/root.json")),
-            required_owner: 0,
+            system_anchor,
+            required_owner: AnchorOwner::System,
         }
     }
 }
@@ -119,10 +145,6 @@ impl PendingObject {
 
 fn seq_file(sequence: u64) -> String {
     format!("{sequence:020}.json")
-}
-
-fn current_uid() -> u32 {
-    nix::unistd::Uid::current().as_raw()
 }
 
 impl TrustStore {
@@ -218,13 +240,13 @@ impl TrustStore {
         };
         DirBuilder::new()
             .recursive(true)
-            .mode(0o700)
+            .unix_mode(0o700)
             .create(&self.root)
             .map_err(io)?;
         for sub in SUBDIRS {
             DirBuilder::new()
                 .recursive(true)
-                .mode(0o700)
+                .unix_mode(0o700)
                 .create(self.root.join(sub))
                 .map_err(io)?;
         }
@@ -250,7 +272,7 @@ impl TrustStore {
             if let Some(parent) = object.path.parent() {
                 DirBuilder::new()
                     .recursive(true)
-                    .mode(0o700)
+                    .unix_mode(0o700)
                     .create(parent)
                     .map_err(|_| TrustError::Io {
                         object: object.object,
@@ -388,7 +410,7 @@ pub(crate) fn read_object<T: DeserializeOwned>(
     path: &Path,
     object: &'static str,
 ) -> Result<T, TrustError> {
-    let bytes = read_secure_file(path, object, current_uid())?;
+    let bytes = read_secure_file(path, object, AnchorOwner::CurrentUser)?;
     serde_json::from_slice(&bytes).map_err(|_| TrustError::Malformed { object })
 }
 
@@ -402,9 +424,8 @@ pub(crate) fn create_new_object<T: Serialize>(
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(0o600)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(path)
+        .unix_mode(0o600)
+        .open_no_follow(path)
         .map_err(|e| {
             if e.kind() == ErrorKind::AlreadyExists {
                 TrustError::AlreadyInitialized
@@ -435,7 +456,7 @@ fn found<T: Serialize + DeserializeOwned>(
     })
 }
 
-/// A directory that is not a symlink, owned by the current user, with no group or other bits.
+/// A directory that is not a symlink, owned by the current user, that no other user can access.
 pub(crate) fn check_dir(path: &Path, object: &'static str) -> Result<(), TrustError> {
     let meta = fs::symlink_metadata(path).map_err(|e| match e.kind() {
         ErrorKind::NotFound => TrustError::Unavailable { object },
@@ -450,22 +471,30 @@ pub(crate) fn check_dir(path: &Path, object: &'static str) -> Result<(), TrustEr
             rule: "must be a directory, not a symlink",
         });
     }
-    if meta.uid() != current_uid() {
+    let observed = access::of(path, &meta).map_err(|_| TrustError::Io {
+        object,
+        action: "inspected",
+    })?;
+    if observed.owner != Owner::CurrentUser {
         return Err(TrustError::Insecure {
             object,
             rule: "must be owned by the current user",
         });
     }
-    if meta.permissions().mode() & 0o077 != 0 {
+    if observed.others_have_access {
         return Err(TrustError::Insecure {
             object,
-            rule: "must not be accessible to group or others (chmod 700)",
+            rule: "must not be accessible to other users (Unix: chmod 700)",
         });
     }
     Ok(())
 }
 
-fn read_secure_file(path: &Path, object: &'static str, owner: u32) -> Result<Vec<u8>, TrustError> {
+fn read_secure_file(
+    path: &Path,
+    object: &'static str,
+    owner: AnchorOwner,
+) -> Result<Vec<u8>, TrustError> {
     let meta = fs::symlink_metadata(path).map_err(|e| match e.kind() {
         ErrorKind::NotFound => TrustError::Unavailable { object },
         _ => TrustError::Io {
@@ -479,16 +508,20 @@ fn read_secure_file(path: &Path, object: &'static str, owner: u32) -> Result<Vec
             rule: "must be a regular file, not a symlink",
         });
     }
-    if meta.uid() != owner {
+    let observed = access::of(path, &meta).map_err(|_| TrustError::Io {
+        object,
+        action: "inspected",
+    })?;
+    if !owner.accepts(observed.owner) {
         return Err(TrustError::Insecure {
             object,
             rule: "has an unexpected owner",
         });
     }
-    if meta.permissions().mode() & 0o022 != 0 {
+    if observed.others_can_write {
         return Err(TrustError::Insecure {
             object,
-            rule: "must not be writable by group or others",
+            rule: "must not be writable by other users",
         });
     }
     if meta.len() > MAX_OBJECT_BYTES {
@@ -496,8 +529,7 @@ fn read_secure_file(path: &Path, object: &'static str, owner: u32) -> Result<Vec
     }
     let file = OpenOptions::new()
         .read(true)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(path)
+        .open_no_follow(path)
         .map_err(|_| TrustError::Io {
             object,
             action: "read",
@@ -531,9 +563,8 @@ pub(crate) fn atomic_replace(
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(0o600)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
-        .open(&tmp)
+        .unix_mode(0o600)
+        .open_no_follow(&tmp)
         .map_err(|_| io("created"))?;
     file.write_all(bytes)
         .and_then(|()| file.sync_all())

@@ -9,7 +9,6 @@
 //! a look-alike at the same path, or swapping the root for a symlink, no longer matches.
 
 use std::fs;
-use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -39,10 +38,14 @@ pub enum TrustStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DirectoryIdentity {
-    /// `st_dev`.
+    /// Device (Unix `st_dev`) or volume serial number (Windows).
     pub device: u64,
-    /// `st_ino`.
+    /// Inode (Unix `st_ino`) or file index (Windows).
     pub inode: u64,
+    /// Inode generation where the filesystem reports one; tells a directory recreated with a
+    /// reused inode number from the original. Absent in registrations made before 0.2.0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<u64>,
 }
 
 impl DirectoryIdentity {
@@ -68,10 +71,26 @@ impl DirectoryIdentity {
                 rule: "path is not canonical",
             });
         }
+        let id =
+            agentguard_platform::identity::file_id(root.as_path()).map_err(|_| TrustError::Io {
+                object,
+                action: "identified",
+            })?;
         Ok(Self {
-            device: meta.dev(),
-            inode: meta.ino(),
+            device: id.device,
+            inode: id.file,
+            generation: agentguard_platform::identity::generation(root.as_path()),
         })
+    }
+
+    /// Whether `observed` is the directory this identity was recorded for. A recorded
+    /// generation must match; an identity recorded without one compares device and inode only.
+    pub fn matches(&self, observed: &Self) -> bool {
+        self.device == observed.device
+            && self.inode == observed.inode
+            && self
+                .generation
+                .is_none_or(|g| observed.generation == Some(g))
     }
 }
 
@@ -227,7 +246,7 @@ impl ProjectRegistry for VerifiedRegistry {
             return None;
         }
         match DirectoryIdentity::observe(&project.root) {
-            Ok(observed) if observed == project.directory => Some(ProjectIdentity::new(
+            Ok(observed) if project.directory.matches(&observed) => Some(ProjectIdentity::new(
                 project.root.clone(),
                 project.repository.clone(),
             )),

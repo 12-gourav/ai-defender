@@ -55,7 +55,7 @@ pub use hierarchy::{mandatory_rules, EffectivePolicy, Layer, Provenance};
 pub use manifest::{ExecutionSettings, PolicyDocument, PolicyScope};
 pub use registry::{ProjectRegistration, TrustStatus, VerifiedRegistry};
 pub use runtime::{load_runtime, LockdownPolicy, TrustState, TrustedRuntime};
-pub use store::{AnchorConfig, TrustStore, VerifiedTrust};
+pub use store::{AnchorConfig, AnchorOwner, TrustStore, VerifiedTrust};
 pub use update::{
     initialize, quarantine, register_project, revoke_project, rotate_keyset, update_policy,
     PolicyUpdateRequest, UpdateReceipt,

@@ -1,0 +1,45 @@
+[package]
+name = "agentguard-platform"
+description = "Operating-system primitives behind AgentGuard's file, ownership and process checks: one Unix and one Windows implementation of the same API."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# The workspace forbids `unsafe`. This crate is the one exception, for Windows system calls only:
+# `unsafe` is denied crate-wide and allowed solely inside `src/windows.rs` and the Linux inode
+# generation ioctl in `src/identity.rs`, block by block.
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "warn"
+print_stderr = "warn"
+undocumented_unsafe_blocks = "deny"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+doc_markdown = "allow"
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["ioctl"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
